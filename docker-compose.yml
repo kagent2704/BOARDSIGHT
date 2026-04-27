@@ -1,0 +1,39 @@
+services:
+  boardsight-ai:
+    build:
+      context: ./python-ai
+      dockerfile: Dockerfile
+    container_name: boardsight-ai
+    env_file:
+      - ./python-ai/.env
+    environment:
+      PYTHONIOENCODING: UTF-8
+      MPLBACKEND: Agg
+      HF_HOME: /workspace/.cache/huggingface
+      DEEPFACE_HOME: /workspace/.cache/deepface
+      HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+      BOARDSIGHT_WARM_MODELS: "0"
+    volumes:
+      - ./output:/workspace/output
+      - boardsight-model-cache:/workspace/.cache
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  boardsight-web:
+    build:
+      context: ./java-app
+      dockerfile: Dockerfile
+    container_name: boardsight-web
+    environment:
+      BOARDSIGHT_AI_URL: http://boardsight-ai:8000
+    volumes:
+      - ./output:/workspace/output
+    ports:
+      - "8080:8080"
+    depends_on:
+      - boardsight-ai
+    restart: unless-stopped
+
+volumes:
+  boardsight-model-cache:

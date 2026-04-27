@@ -1,0 +1,10 @@
+.git
+.gitignore
+output
+legacy
+java-app/build
+python-ai/.venv
+python-ai/__pycache__
+python-ai/boardsight_ai/__pycache__
+python-ai/boardsight_ai/features/__pycache__
+python-ai/boardsight_ai/providers/__pycache__

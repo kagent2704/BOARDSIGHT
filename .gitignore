@@ -1,0 +1,39 @@
+# Build outputs
+output/
+java-app/build/
+java-app/*.jar
+java-app/java_sources.txt
+
+# Python caches and environments
+python-ai/.venv/
+python-ai/.env
+python-ai/__pycache__/
+python-ai/boardsight_ai/__pycache__/
+python-ai/boardsight_ai/features/__pycache__/
+python-ai/boardsight_ai/providers/__pycache__/
+*.pyc
+
+# IDE and local metadata
+.idea/
+*.iml
+
+# Model caches and downloaded weights
+*.pt
+*.bin
+*.safetensors
+
+# Local media and archives
+*.mp4
+*.zip
+
+# Project extras not needed for the core repo
+legacy/
+docs/
+UML DIAGRAMS/
+Visual_Artifact_Logging/
+Workflow_modelling_engine/
+
+# Local office artifacts and drafts
+*.doc
+*.docx
+*.pdf

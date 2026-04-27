@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BoardSight</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body data-theme="light">
+  <div class="app-shell">
+    <aside class="brand-panel">
+      <div class="brand-mark">B</div>
+      <h1>BoardSight</h1>
+      <p class="tagline">Vision-Driven Structural Accountability.</p>
+      <p class="subtag">Observe. Analyse. Strengthen Governance.</p>
+      <button id="themeToggle" class="theme-toggle">Switch Theme</button>
+    </aside>
+
+    <main class="workspace">
+      <section id="loginView" class="auth-panel panel elevated">
+        <div class="panel-header">
+          <div>
+            <h2 id="authTitle">Sign in to BoardSight</h2>
+            <p id="authSubtitle">Access your governance workspace</p>
+          </div>
+        </div>
+        <form id="loginForm" class="auth-form">
+          <label id="nameField" class="hidden">Full Name<input type="text" id="displayName" value="Jordan Davis"></label>
+          <label id="usernameField">Username or Email<input type="text" id="username" value="admin" required></label>
+          <label id="emailField" class="hidden">Email<input type="email" id="email" value=""></label>
+          <label>Password<input type="password" id="password" value="boardsight123" required></label>
+          <label id="confirmPasswordField" class="hidden">Confirm Password<input type="password" id="confirmPassword" value=""></label>
+          <label>Role
+            <select id="role">
+              <option>Executive Observer</option>
+              <option>Board Member</option>
+              <option>Analyst</option>
+            </select>
+          </label>
+          <div class="auth-actions">
+            <button id="authSubmit" type="submit" class="primary-btn">Sign In</button>
+            <button id="guestLogin" type="button" class="ghost-btn">Continue as Demo</button>
+          </div>
+          <div class="auth-switch">
+            <span id="authPrompt">New here?</span>
+            <button id="authModeToggle" type="button" class="link-btn auth-link">Create account</button>
+          </div>
+          <div id="authStatus" class="auth-status muted"></div>
+        </form>
+      </section>
+
+      <section id="appView" class="app-view hidden">
+        <header class="topbar panel">
+          <div class="topbar-title">
+            <span class="logo-chip">BoardSight</span>
+            <input id="searchInput" class="search-input" placeholder="Search meetings, decisions, people...">
+          </div>
+          <div class="topbar-actions">
+            <label class="upload-btn">
+              <input type="file" id="uploadInput" accept="video/*" hidden>
+              <span>Upload Meeting</span>
+            </label>
+            <button id="refreshBtn" class="ghost-btn">Refresh</button>
+            <button id="signOutBtn" class="ghost-btn">Sign Out</button>
+            <div id="topAvatar" class="avatar">JD</div>
+          </div>
+        </header>
+
+        <div class="layout-grid">
+          <nav class="sidebar panel">
+            <div class="nav-group">
+              <button class="nav-item active" data-view="dashboard">Home</button>
+              <button class="nav-item" data-view="meetings">Meetings</button>
+              <button class="nav-item" data-view="analyze">Upload & Analyze</button>
+              <button class="nav-item" data-view="trace">Decision Trace</button>
+              <button class="nav-item" data-view="workflow">Workflow Modelling</button>
+            </div>
+            <div class="nav-group">
+              <div class="nav-label">Admin</div>
+              <button class="nav-item" data-view="admin">System Settings</button>
+            </div>
+            <div class="user-chip">
+              <div id="userInitials" class="avatar small">JD</div>
+              <div>
+                <strong id="userName">Jordan Davis</strong>
+                <span id="userRole">Executive Observer</span>
+              </div>
+            </div>
+          </nav>
+
+          <section id="dashboardView" class="content-view">
+            <div class="hero panel">
+              <div>
+                <h2 id="heroGreeting">Good Morning, Jordan!</h2>
+                <p>Here’s what’s happening in your governance workspace today.</p>
+              </div>
+              <div class="hero-status">
+                <span class="status-dot"></span>
+                <span>Live analytics available</span>
+              </div>
+            </div>
+
+            <div class="kpi-grid">
+              <article class="kpi-card panel"><span>Meetings Analyzed</span><strong id="kpiMeetings">--</strong><small>Populates after the first completed analysis</small></article>
+              <article class="kpi-card panel"><span>Decisions Detected</span><strong id="kpiDecisions">--</strong><small>Populates after the first completed analysis</small></article>
+              <article class="kpi-card panel"><span>Avg. Participation</span><strong id="kpiAttention">--</strong><small>Populates after the first completed analysis</small></article>
+              <article class="kpi-card panel"><span>Dominance Ratio</span><strong id="kpiDominance">--</strong><small>Populates after the first completed analysis</small></article>
+            </div>
+
+            <div class="dashboard-main">
+              <article class="panel chart-panel">
+                <div class="panel-title-row"><h3>Participation Balance</h3><button class="link-btn" data-view-target="meetings">View Details</button></div>
+                <div class="donut-wrap">
+                  <div id="donutChart" class="donut-chart is-empty"><span id="donutValue">--</span><small>Awaiting analysis</small></div>
+                  <ul id="speakerLegend" class="legend-list empty-list"><li class="empty-state">No speaker balance data yet.</li></ul>
+                </div>
+              </article>
+              <article class="panel chart-panel">
+                <div class="panel-title-row"><h3>Decision Timeline</h3><button class="link-btn" data-view-target="trace">View Decisions</button></div>
+                <div id="timelineChart" class="line-chart empty-chart"><div class="empty-state">No decision timeline yet.</div></div>
+              </article>
+            </div>
+
+            <div class="dashboard-bottom">
+              <article class="panel">
+                <div class="panel-title-row"><h3>Recent Meetings</h3><button class="link-btn" data-view-target="meetings">See All</button></div>
+                <div class="dashboard-card-body">
+                  <div id="meetingList" class="meeting-list"><div class="empty-state">Processed meetings will appear here after analysis.</div></div>
+                </div>
+              </article>
+              <article class="panel">
+                <div class="panel-title-row"><h3>Workflow Snapshot</h3><button class="link-btn" data-view-target="workflow">Edit Workflow</button></div>
+                <div class="dashboard-card-body">
+                  <div id="workflowSnapshot" class="workflow-snapshot"><div class="empty-state">Workflow stages will appear after decision modelling runs.</div></div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section id="meetingsView" class="content-view hidden">
+            <article class="panel meeting-detail">
+              <div class="panel-title-row">
+                <div>
+                  <h3 id="meetingTitle">Meeting Detail</h3>
+                  <p id="meetingConclusion" class="muted"></p>
+                </div>
+                <div class="button-row">
+                  <button id="exportPdfBtn" class="ghost-btn">Export PDF</button>
+                  <button id="exportDocxBtn" class="ghost-btn">Export DOCX</button>
+                  <button id="exportXlsxBtn" class="ghost-btn">Export XLSX</button>
+                </div>
+              </div>
+              <div class="tabs">
+                <button class="tab active" data-tab="overview">Overview</button>
+                <button class="tab" data-tab="speakers">Speakers</button>
+                <button class="tab" data-tab="transcript">Transcript</button>
+                <button class="tab" data-tab="insights">Insights</button>
+              </div>
+              <div class="meeting-grid">
+                <div class="media-card panel nested">
+                  <img id="meetingCover" class="cover-image" src="" alt="Meeting summary">
+                  <div id="meetingMediaEmpty" class="empty-state hidden">Upload and process a meeting to generate the overview card.</div>
+                  <div class="progress-row"><span>Analysis Progress</span><strong>Complete</strong></div>
+                </div>
+                <div class="speaker-summary panel nested">
+                  <h4>Speaker Summary</h4>
+                  <div id="speakerSummary"></div>
+                </div>
+              </div>
+              <div id="cvFeaturePanel" class="panel nested cv-feature-panel">
+                <div class="panel-title-row">
+                  <div>
+                    <h4>Computer Vision Coverage</h4>
+                    <p class="muted">Frame sampling, speaker-versus-presentation distinction, and detected visual artifact types.</p>
+                  </div>
+                </div>
+                <div id="cvFeatureContent" class="cv-feature-content">
+                  <div class="empty-state">Process a meeting to inspect the visual-analysis extension.</div>
+                </div>
+              </div>
+              <div id="transcriptList" class="transcript-list"></div>
+            </article>
+          </section>
+
+          <section id="traceView" class="content-view hidden">
+            <article class="panel trace-layout">
+              <div class="panel-title-row">
+                <div>
+                  <h3>Decision Trace</h3>
+                  <p class="muted">Chronological record of decisions</p>
+                </div>
+                <button id="exportTraceBtn" class="ghost-btn">Export Report</button>
+              </div>
+              <div class="trace-grid">
+                <div id="traceTimeline" class="trace-timeline"></div>
+                <aside class="panel nested summary-box">
+                  <h4>Decision Summary</h4>
+                  <div id="decisionSummary"></div>
+                </aside>
+              </div>
+            </article>
+          </section>
+
+          <section id="workflowView" class="content-view hidden">
+            <article class="panel workflow-layout">
+              <div class="panel-title-row">
+                <div>
+                  <h3>Workflow Modelling</h3>
+                  <p class="muted">Decision approval workflows and escalation paths</p>
+                </div>
+                <div class="button-row">
+                  <button class="ghost-btn">New Workflow</button>
+                  <button class="primary-btn">Save</button>
+                </div>
+              </div>
+              <div class="workflow-grid">
+                <aside class="panel nested component-list">
+                  <h4>Components</h4>
+                  <ul>
+                    <li>Start</li><li>Approval</li><li>Review</li><li>Decision</li><li>Parallel</li><li>Escalation</li><li>End</li>
+                  </ul>
+                </aside>
+                <div id="workflowCanvas" class="workflow-canvas panel nested"></div>
+                <aside class="panel nested property-card">
+                  <h4>Node Properties</h4>
+                  <div id="workflowProperties"></div>
+                </aside>
+              </div>
+            </article>
+          </section>
+
+          <section id="analyzeView" class="content-view hidden">
+            <article class="panel upload-layout">
+              <div class="panel-title-row">
+                <div>
+                  <h3>Upload & Analyze</h3>
+                  <p class="muted">Run model-backed meeting intelligence on a recorded meeting.</p>
+                </div>
+                <span class="model-pill">DL-only pipeline</span>
+              </div>
+              <div class="upload-box">
+                <label class="upload-zone" for="uploadInput">
+                  <strong>Choose a meeting video</strong>
+                  <span>MP4 or other browser-supported video formats</span>
+                </label>
+                <div class="analysis-range-grid">
+                  <label>Start Time
+                    <input type="text" id="analysisStartInput" placeholder="00:00 or 00:10:00">
+                  </label>
+                  <label>End Time
+                    <input type="text" id="analysisEndInput" placeholder="Leave blank for full video">
+                  </label>
+                </div>
+                <p class="muted range-note">All deep learning stages still run. These fields only choose which part of the video gets analyzed.</p>
+                <div id="uploadStatus" class="upload-status">No upload in progress.</div>
+              </div>
+            </article>
+          </section>
+
+          <section id="adminView" class="content-view hidden">
+            <article class="panel admin-layout">
+              <div class="panel-title-row">
+                <div>
+                  <h3>Admin Settings</h3>
+                  <p class="muted">Configure BoardSight system parameters</p>
+                </div>
+              </div>
+              <div class="settings-grid">
+                <div class="panel nested">
+                  <h4>Analysis Settings</h4>
+                  <label>Dominance Threshold<input type="range" value="35"></label>
+                  <label>Minimum Speaking Duration<select><option>10 seconds</option></select></label>
+                  <label>Decision Sensitivity<select><option>Medium</option></select></label>
+                </div>
+                <div class="panel nested">
+                  <h4>System Preferences</h4>
+                  <label>Default Language<select><option>English (US)</option></select></label>
+                  <label>Time Zone<select><option>(UTC+05:30) India Standard Time</option></select></label>
+                  <label class="toggle-row">Auto-generate Decision Trace <input type="checkbox" checked></label>
+                  <label class="toggle-row">Enable Tamper Detection <input type="checkbox" checked></label>
+                </div>
+              </div>
+            </article>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div id="processingOverlay" class="processing-overlay hidden">
+    <div class="processing-card panel">
+      <div class="loader-ring"></div>
+      <strong>Analyzing meeting</strong>
+      <span>Running speech, vision, decision, and workflow models.</span>
+    </div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

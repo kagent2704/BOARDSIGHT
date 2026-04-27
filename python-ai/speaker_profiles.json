@@ -1,0 +1,14 @@
+{
+  "Speaker-1": {
+    "display_name": "Speaker-1",
+    "designation": "Participant"
+  },
+  "Speaker-2": {
+    "display_name": "Speaker-2",
+    "designation": "Participant"
+  },
+  "Speaker-3": {
+    "display_name": "Speaker-3",
+    "designation": "Participant"
+  }
+}
