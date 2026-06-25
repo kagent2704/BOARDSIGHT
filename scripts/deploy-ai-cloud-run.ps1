@@ -3,6 +3,15 @@ param(
     [string]$Region = "us-central1",
     [string]$ServiceName = "boardsight-ai",
     [string]$AgentApiKey = "",
+    [string]$DatabaseUrl = "",
+    [string]$GitLabBaseUrl = "",
+    [string]$GitLabProjectId = "",
+    [string]$GitLabPrivateToken = "",
+    [string]$LlmProvider = "extractive",
+    [string]$Memory = "4Gi",
+    [int]$Cpu = 2,
+    [int]$TimeoutSeconds = 900,
+    [int]$MaxInstances = 2,
     [switch]$AllowUnauthenticated
 )
 
@@ -36,13 +45,37 @@ Write-Host "Source:  $sourceRoot"
 if ($AgentApiKey) {
     Write-Host "Agent API key: configured"
 }
+if ($DatabaseUrl) {
+    Write-Host "Database URL: configured"
+}
+if ($GitLabBaseUrl -or $GitLabProjectId -or $GitLabPrivateToken) {
+    Write-Host "GitLab integration: configured"
+}
 
 & $gcloudCmd config set project $ProjectId | Out-Null
 & $gcloudCmd config set run/region $Region | Out-Null
 
-$envVars = "PYTHONIOENCODING=UTF-8,MPLBACKEND=Agg,HF_HUB_DISABLE_SYMLINKS_WARNING=1,BOARDSIGHT_WARM_MODELS=0"
+$envVars = @(
+    "PYTHONIOENCODING=UTF-8",
+    "MPLBACKEND=Agg",
+    "HF_HUB_DISABLE_SYMLINKS_WARNING=1",
+    "BOARDSIGHT_WARM_MODELS=0",
+    "BOARDSIGHT_LLM_PROVIDER=$LlmProvider"
+)
 if ($AgentApiKey) {
-    $envVars = "$envVars,BOARDSIGHT_AGENT_API_KEY=$AgentApiKey"
+    $envVars += "BOARDSIGHT_AGENT_API_KEY=$AgentApiKey"
+}
+if ($DatabaseUrl) {
+    $envVars += "BOARDSIGHT_DATABASE_URL=$DatabaseUrl"
+}
+if ($GitLabBaseUrl) {
+    $envVars += "BOARDSIGHT_GITLAB_BASE_URL=$GitLabBaseUrl"
+}
+if ($GitLabProjectId) {
+    $envVars += "BOARDSIGHT_GITLAB_PROJECT_ID=$GitLabProjectId"
+}
+if ($GitLabPrivateToken) {
+    $envVars += "BOARDSIGHT_GITLAB_PRIVATE_TOKEN=$GitLabPrivateToken"
 }
 
 & $gcloudCmd run deploy $ServiceName `
@@ -50,9 +83,9 @@ if ($AgentApiKey) {
     --region $Region `
     --project $ProjectId `
     --port 8000 `
-    --memory 4Gi `
-    --cpu 2 `
-    --timeout 900 `
-    --max-instances 2 `
-    --set-env-vars $envVars `
+    --memory $Memory `
+    --cpu $Cpu `
+    --timeout $TimeoutSeconds `
+    --max-instances $MaxInstances `
+    --set-env-vars ($envVars -join ",") `
     $authFlag

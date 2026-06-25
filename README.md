@@ -8,6 +8,8 @@ The concrete cloud rollout plan now lives in [docs/GOOGLE_CLOUD_AGENT_IMPLEMENTA
 
 For independent public hosting, use [DEPLOY_RENDER_NEON.md](/C:/Users/kashm/OneDrive/Desktop/BOARDSIGHT_CV_AGENTIC/docs/DEPLOY_RENDER_NEON.md). A Render Blueprint file is included at [render.yaml](/C:/Users/kashm/OneDrive/Desktop/BOARDSIGHT_CV_AGENTIC/render.yaml).
 
+For the most practical full-feature cloud path, use [DEPLOY_CLOUD_RUN.md](/C:/Users/kashm/OneDrive/Desktop/BOARDSIGHT_CV_AGENTIC/docs/DEPLOY_CLOUD_RUN.md).
+
 The current codebase follows a deep-learning-only detection policy. If a required model is unavailable, the pipeline reports that feature as unavailable instead of falling back to heuristics.
 
 See [PROJECT_ALIGNMENT.md](/C:/Users/kashm/OneDrive/Desktop/BOARDSIGHT/docs/PROJECT_ALIGNMENT.md) for the design direction that supersedes older papers and SRS language.

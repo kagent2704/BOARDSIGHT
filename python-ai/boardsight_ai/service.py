@@ -169,6 +169,17 @@ def health() -> dict[str, str]:
     return payload
 
 
+@app.get("/")
+def root() -> dict[str, Any]:
+    return {
+        "service": "BoardSight AI Service",
+        "status": "ok",
+        "ui_hint": "This is the AI backend. Open the BoardSight web service URL for the full product UI.",
+        "health_path": "/health",
+        "capabilities_path": "/api/v1/agent/capabilities",
+    }
+
+
 async def _collect_request_payload(request: Request, payload: dict | None = None) -> dict:
     request_payload = dict(payload or {})
     if request_payload:
