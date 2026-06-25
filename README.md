@@ -209,6 +209,27 @@ Available analysis profiles in the UI and API:
 - `recorded-deep`: richer visual evidence extraction for final review
 - `live`: intended for lower-latency live meeting use
 
+## Copilot Model Options
+
+BoardSight Copilot supports multiple answer modes:
+
+- `BOARDSIGHT_LLM_PROVIDER=extractive`
+  Best for grounded, non-hallucinating answers based only on stored meeting context
+- `BOARDSIGHT_LLM_PROVIDER=transformers`
+  Uses the local `flan-t5-small` fallback for lightweight generative answers
+- `BOARDSIGHT_LLM_PROVIDER=gemini`
+  Uses the Gemini API through the official `google-genai` SDK for stronger custom Q&A
+
+Gemini setup example:
+
+```powershell
+$env:BOARDSIGHT_LLM_PROVIDER="gemini"
+$env:GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+$env:BOARDSIGHT_GEMINI_MODEL="gemini-3.5-flash"
+```
+
+If Gemini is unavailable, BoardSight falls back to grounded extractive answers instead of inventing unsupported meeting details.
+
 Slower, richer profile:
 
 ```powershell

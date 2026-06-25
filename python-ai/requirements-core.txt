@@ -6,3 +6,4 @@ reportlab>=4.2,<5.0
 XlsxWriter>=3.2,<4.0
 sqlalchemy>=2.0,<3.0
 psycopg[binary]>=3.2,<4.0
+google-genai>=2.3,<3.0

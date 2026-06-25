@@ -8,6 +8,8 @@ param(
     [string]$GitLabProjectId = "",
     [string]$GitLabPrivateToken = "",
     [string]$LlmProvider = "extractive",
+    [string]$GeminiApiKey = "",
+    [string]$GeminiModel = "gemini-3.5-flash",
     [string]$Memory = "4Gi",
     [int]$Cpu = 2,
     [int]$TimeoutSeconds = 900,
@@ -51,6 +53,9 @@ if ($DatabaseUrl) {
 if ($GitLabBaseUrl -or $GitLabProjectId -or $GitLabPrivateToken) {
     Write-Host "GitLab integration: configured"
 }
+if ($GeminiApiKey) {
+    Write-Host "Gemini API: configured"
+}
 
 & $gcloudCmd config set project $ProjectId | Out-Null
 & $gcloudCmd config set run/region $Region | Out-Null
@@ -62,6 +67,10 @@ $envVars = @(
     "BOARDSIGHT_WARM_MODELS=0",
     "BOARDSIGHT_LLM_PROVIDER=$LlmProvider"
 )
+if ($GeminiApiKey) {
+    $envVars += "GEMINI_API_KEY=$GeminiApiKey"
+    $envVars += "BOARDSIGHT_GEMINI_MODEL=$GeminiModel"
+}
 if ($AgentApiKey) {
     $envVars += "BOARDSIGHT_AGENT_API_KEY=$AgentApiKey"
 }

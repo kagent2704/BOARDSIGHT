@@ -38,6 +38,11 @@ Optional but recommended for full execution workflows:
 - `BOARDSIGHT_GITLAB_PROJECT_ID`
 - `BOARDSIGHT_GITLAB_PRIVATE_TOKEN`
 
+Optional for higher-quality Copilot answers:
+
+- `GEMINI_API_KEY`
+- `BOARDSIGHT_GEMINI_MODEL` such as `gemini-3.5-flash`
+
 ## Recommended production-ish sizing
 
 For the AI service:
@@ -69,6 +74,9 @@ cd "C:\Users\kashm\OneDrive\Desktop\BOARDSIGHT_CV_AGENTIC"
   -GitLabBaseUrl "https://gitlab.com" `
   -GitLabProjectId "kagent007/boardsight-agent" `
   -GitLabPrivateToken "replace-with-your-gitlab-token" `
+  -LlmProvider "gemini" `
+  -GeminiApiKey "replace-with-your-gemini-api-key" `
+  -GeminiModel "gemini-3.5-flash" `
   -Memory "4Gi" `
   -Cpu 2 `
   -TimeoutSeconds 900 `
@@ -126,3 +134,4 @@ When this finishes, open the returned `boardsight-web` URL in the browser.
 - The AI root URL is an API service, not the main product UI. Use the web service URL for the product.
 - Cloud Run cold starts are expected, especially on the AI service.
 - If build times or memory usage get painful later, the next upgrade is to prebuild the AI image locally or in CI, push it to Artifact Registry, and deploy by image instead of source.
+- If you do not set `GEMINI_API_KEY`, BoardSight will keep using its grounded extractive fallback or the local transformer path, depending on `BOARDSIGHT_LLM_PROVIDER`.

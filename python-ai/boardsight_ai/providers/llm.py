@@ -9,6 +9,20 @@ from .runtime import optional_import
 
 
 @lru_cache(maxsize=1)
+def _gemini_client(api_key: str | None) -> tuple[Any, str] | None:
+    if not api_key:
+        return None
+    genai = optional_import("google.genai")
+    if genai is None:
+        return None
+    try:
+        client = genai.Client(api_key=api_key)
+        return client, "google-genai"
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=1)
 def _summarizer() -> tuple[Any, Any, Any, str, str] | None:
     transformers = optional_import("transformers")
     torch = optional_import("torch")
@@ -28,6 +42,22 @@ def _summarizer() -> tuple[Any, Any, Any, str, str] | None:
 
 
 def summarize(text: str, config: AppConfig) -> tuple[str, str]:
+    provider = str(config.llm_provider or "").strip().lower()
+    if provider == "gemini":
+        generated, source = generate_text(
+            (
+                "You are summarizing slide evidence and nearby meeting transcript. "
+                "Write exactly 2 concise factual sentences. "
+                "Stay grounded in the provided evidence and do not invent specifics.\n\n"
+                + " ".join(str(text or "").split())
+            ),
+            config,
+            max_new_tokens=72,
+            min_new_tokens=12,
+        )
+        if generated.strip():
+            return generated.strip(), source
+
     summarizer = _summarizer()
     if summarizer is not None:
         try:
@@ -66,6 +96,22 @@ def summarize(text: str, config: AppConfig) -> tuple[str, str]:
 
 
 def generate_text(prompt: str, config: AppConfig, max_new_tokens: int = 144, min_new_tokens: int = 24) -> tuple[str, str]:
+    provider = str(config.llm_provider or "").strip().lower()
+    if provider == "gemini":
+        gemini = _gemini_client(config.gemini_api_key)
+        if gemini is not None:
+            try:
+                client, library_name = gemini
+                interaction = client.interactions.create(
+                    model=config.gemini_model,
+                    input=" ".join(str(prompt or "").split()),
+                )
+                output_text = str(getattr(interaction, "output_text", "") or "").strip()
+                if output_text:
+                    return output_text, f"{library_name}:{config.gemini_model}"
+            except Exception:
+                pass
+
     summarizer = _summarizer()
     if summarizer is not None:
         try:

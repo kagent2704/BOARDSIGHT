@@ -52,6 +52,8 @@ class AppConfig:
     database_url: str | None = os.getenv("BOARDSIGHT_DATABASE_URL")
     llm_provider: str = os.getenv("BOARDSIGHT_LLM_PROVIDER", "transformers")
     openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
+    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    gemini_model: str = os.getenv("BOARDSIGHT_GEMINI_MODEL", "gemini-3.5-flash")
 
 
 def default_config(project_root: Path | None = None, output_root: Path | None = None) -> AppConfig:
