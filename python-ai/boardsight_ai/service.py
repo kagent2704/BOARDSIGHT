@@ -575,6 +575,8 @@ def _recorded_meeting_agent_context(record: dict) -> dict[str, Any]:
     payload = json.loads(str(record.get("result_json") or "{}"))
     transcript_segments = list(payload.get("transcript", {}).get("segments", []) or [])
     contract = payload.get("metadata", {}).get("agentic_contract", {}) or {}
+    decision_items = list(payload.get("decision_moments", []) or [])
+    action_items = list(payload.get("workflow_model", {}).get("execution_plan", []) or [])
     return {
         "source_kind": "meeting",
         "source_id": str(record.get("id")),
@@ -592,12 +594,14 @@ def _recorded_meeting_agent_context(record: dict) -> dict[str, Any]:
         },
         "counts": {
             "transcript_segments": len(transcript_segments),
-            "decisions": len(payload.get("decision_moments", []) or []),
-            "action_items": len(payload.get("workflow_model", {}).get("execution_plan", []) or []),
+            "decisions": len(decision_items),
+            "action_items": len(action_items),
             "risks": len(contract.get("entities", {}).get("risk_signals", []) or []),
             "visual_artifacts": len(payload.get("visual_artifacts", []) or []),
         },
         "agentic_contract": contract,
+        "decisions": decision_items,
+        "action_items": action_items,
         "storage": {
             "meeting_id": int(record["id"]),
             "output_dir": str(record.get("output_dir") or ""),
@@ -692,8 +696,8 @@ def _resolve_chat_source_context(request_payload: dict[str, Any], user: dict[str
 def _extract_chat_lists(context: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str], list[str]]:
     contract = context.get("agentic_contract", {}) or {}
     entities = contract.get("entities", {}) if isinstance(contract, dict) else {}
-    decisions = list(entities.get("decisions", []) or [])
-    actions = list(entities.get("actions", []) or [])
+    decisions = list(entities.get("decisions", []) or context.get("decisions", []) or [])
+    actions = list(entities.get("actions", []) or context.get("action_items", []) or [])
     risks = list(entities.get("risk_signals", []) or [])
     summary = context.get("summary", {}) if isinstance(context.get("summary"), dict) else {}
     discussion_points = [str(item).strip() for item in (summary.get("discussion_points", []) or []) if str(item).strip()]
