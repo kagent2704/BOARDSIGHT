@@ -36,6 +36,9 @@ public final class ApiHandlers {
         server.createContext("/api/auth/login", new AuthProxyHandler("/api/v1/auth/login"));
         server.createContext("/api/auth/register", new AuthProxyHandler("/api/v1/auth/register"));
         server.createContext("/api/auth/me", new MeHandler());
+        server.createContext("/api/v1/auth/login", new AuthProxyHandler("/api/v1/auth/login"));
+        server.createContext("/api/v1/auth/register", new AuthProxyHandler("/api/v1/auth/register"));
+        server.createContext("/api/v1/me", new MeHandler());
         server.createContext("/api/meetings", new MeetingsHandler(repository));
         server.createContext("/api/meeting", new MeetingDetailHandler(repository));
         server.createContext("/api/reports", new ReportHandler(repository));
@@ -43,6 +46,11 @@ public final class ApiHandlers {
         server.createContext("/api/live", new LiveProxyHandler(projectRoot));
         server.createContext("/api/gitlab", new GitLabProxyHandler());
         server.createContext("/api/chat", new ChatProxyHandler());
+        server.createContext("/api/v1/meetings", new MeetingsV1Handler(repository));
+        server.createContext("/api/v1/pipeline/run", new AnalyzeHandler(projectRoot, repository));
+        server.createContext("/api/v1/live", new LiveProxyHandler(projectRoot));
+        server.createContext("/api/v1/gitlab", new GitLabProxyHandler());
+        server.createContext("/api/v1/chat/query", new ChatProxyHandler());
         server.createContext("/", new StaticHandler());
     }
 
@@ -127,6 +135,79 @@ public final class ApiHandlers {
                 return;
             }
             HttpUtils.sendJson(exchange, 200, repository.listMeetingsJson());
+        }
+    }
+
+    private static final class MeetingsV1Handler implements HttpHandler {
+        private final MeetingRepository repository;
+
+        private MeetingsV1Handler(MeetingRepository repository) {
+            this.repository = repository;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            HttpUtils.requireMethod(exchange, "GET");
+            String requestPath = exchange.getRequestURI().getPath();
+            String prefix = "/api/v1/meetings";
+            String suffix = requestPath.length() > prefix.length() ? requestPath.substring(prefix.length()) : "";
+
+            if (suffix.isBlank() || "/".equals(suffix)) {
+                String aiServiceUrl = aiServiceUrl();
+                if (aiServiceUrl != null) {
+                    proxyJson(exchange, aiServiceUrl + "/api/v1/meetings");
+                    return;
+                }
+                HttpUtils.sendJson(exchange, 200, repository.listMeetingsJson());
+                return;
+            }
+
+            if (suffix.startsWith("/")) {
+                suffix = suffix.substring(1);
+            }
+            String[] parts = suffix.split("/", 3);
+            if (parts.length == 0 || parts[0].isBlank()) {
+                HttpUtils.sendJson(exchange, 400, "{\"error\":\"Missing meeting id.\"}");
+                return;
+            }
+            String meetingId = parts[0];
+
+            if (parts.length >= 3 && "reports".equals(parts[1])) {
+                String fileName = parts[2];
+                String aiServiceUrl = aiServiceUrl();
+                if (aiServiceUrl != null) {
+                    proxyBinary(
+                        exchange,
+                        aiServiceUrl + "/api/v1/meetings/"
+                            + URLEncoder.encode(meetingId, StandardCharsets.UTF_8)
+                            + "/reports/"
+                            + URLEncoder.encode(fileName, StandardCharsets.UTF_8),
+                        fileName
+                    );
+                    return;
+                }
+
+                Path reportPath = repository.resolveReport(meetingId, fileName);
+                if (reportPath == null || !Files.exists(reportPath)) {
+                    HttpUtils.sendJson(exchange, 404, "{\"error\":\"Report not found.\"}");
+                    return;
+                }
+                HttpUtils.sendFile(exchange, 200, reportPath, HttpUtils.contentType(fileName));
+                return;
+            }
+
+            String aiServiceUrl = aiServiceUrl();
+            if (aiServiceUrl != null) {
+                proxyJson(exchange, aiServiceUrl + "/api/v1/meetings/" + URLEncoder.encode(meetingId, StandardCharsets.UTF_8));
+                return;
+            }
+
+            String payload = repository.loadMeetingJson(meetingId);
+            if (payload == null) {
+                HttpUtils.sendJson(exchange, 404, "{\"error\":\"Meeting not found.\"}");
+                return;
+            }
+            HttpUtils.sendJson(exchange, 200, payload);
         }
     }
 
@@ -262,7 +343,8 @@ public final class ApiHandlers {
             }
 
             String requestPath = exchange.getRequestURI().getPath();
-            String suffix = requestPath.substring("/api/live".length());
+            String routePrefix = requestPath.startsWith("/api/v1/live") ? "/api/v1/live" : "/api/live";
+            String suffix = requestPath.substring(routePrefix.length());
             String targetPath;
             if (suffix.isBlank() || "/".equals(suffix)) {
                 targetPath = "/api/v1/live";
@@ -325,7 +407,8 @@ public final class ApiHandlers {
             }
 
             String requestPath = exchange.getRequestURI().getPath();
-            String suffix = requestPath.substring("/api/gitlab".length());
+            String routePrefix = requestPath.startsWith("/api/v1/gitlab") ? "/api/v1/gitlab" : "/api/gitlab";
+            String suffix = requestPath.substring(routePrefix.length());
             String targetPath = switch (suffix) {
                 case "/plan" -> "/api/v1/gitlab/plan";
                 case "/sync" -> "/api/v1/gitlab/sync";

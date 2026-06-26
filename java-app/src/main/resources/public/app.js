@@ -230,7 +230,7 @@ async function bootstrapSession() {
   }
 
   try {
-    const response = await apiFetch("/api/auth/me");
+    const response = await apiFetch("/api/v1/me");
     const payload = await response.json();
     state.currentUser = normalizeUser(payload);
     updateUserChip();
@@ -280,7 +280,7 @@ async function registerUser() {
     display_name: displayName,
     role
   });
-  const response = await fetch("/api/auth/register", {
+  const response = await fetch("/api/v1/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -293,7 +293,7 @@ async function registerUser() {
     })
   });
 
-  const queryResponse = response.ok ? response : await fetch(`/api/auth/register?${query.toString()}`, {
+  const queryResponse = response.ok ? response : await fetch(`/api/v1/auth/register?${query.toString()}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -321,14 +321,14 @@ async function registerUser() {
 }
 
 async function submitLogin(username, password) {
-  const response = await fetch("/api/auth/login", {
+  const response = await fetch("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ identifier: username, password })
   });
 
   const queryResponse = response.ok ? response : await fetch(
-    `/api/auth/login?identifier=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+    `/api/v1/auth/login?identifier=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -406,7 +406,7 @@ function updateUserChip() {
 
 async function loadMeetings() {
   try {
-    const response = await apiFetch("/api/meetings");
+    const response = await apiFetch("/api/v1/meetings");
     const payload = await response.json();
     state.meetings = payload.items || [];
     syncChatMeetingSelection();
@@ -437,7 +437,7 @@ async function loadMeetingDetail(meetingId) {
   if (!/^\d+$/.test(resolvedMeetingId)) {
     return;
   }
-  const response = await apiFetch(`/api/meeting?id=${encodeURIComponent(resolvedMeetingId)}`);
+  const response = await apiFetch(`/api/v1/meetings/${encodeURIComponent(resolvedMeetingId)}`);
   state.currentMeeting = await response.json();
   state.currentMeetingId = resolvedMeetingId;
   syncChatMeetingSelection(true);
@@ -597,7 +597,7 @@ function renderMeetingDetail() {
   document.getElementById("meetingTitle").textContent = prettifyMeetingId(state.currentMeeting.storage?.meeting_id || state.currentMeetingId);
   document.getElementById("meetingConclusion").textContent = buildMeetingSubtitle(state.currentMeeting);
   loadProtectedImage(
-    `/api/reports/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/summary_card.png`,
+    `/api/v1/meetings/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/reports/summary_card.png`,
     meetingCover
   );
   meetingCover.classList.remove("hidden");
@@ -938,7 +938,7 @@ async function handleUpload(event) {
   setProcessingState(true, `Uploading ${file.name} and running BoardSight analysis...`);
   const formData = new FormData();
   formData.append("file", file);
-  const requestUrl = new URL("/api/analyze", window.location.origin);
+  const requestUrl = new URL("/api/v1/pipeline/run", window.location.origin);
   requestUrl.searchParams.set("analysis_profile", analysisProfileInput?.value || "recorded-fast");
   requestUrl.searchParams.set("source_mode", "recorded");
   if (startSeconds !== null) {
@@ -1014,7 +1014,7 @@ function setView(viewName) {
 function openReport(fileName) {
   if (!state.currentMeetingId) return;
   downloadProtectedFile(
-    `/api/reports/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/${fileName}`,
+    `/api/v1/meetings/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/reports/${fileName}`,
     fileName
   );
 }
@@ -1508,7 +1508,7 @@ async function startLiveSession() {
       source_type: sourceType,
       analysis_profile: analysisProfile
     });
-    const response = await apiFetch(`/api/live/start?${params.toString()}`, {
+    const response = await apiFetch(`/api/v1/live/start?${params.toString()}`, {
       method: "POST"
     });
     const payload = await response.json();
@@ -1598,7 +1598,7 @@ async function finalizeLiveSession() {
   }
 
   try {
-    const response = await apiFetch(`/api/live/${encodeURIComponent(state.liveSession.session_id)}/finalize`, {
+    const response = await apiFetch(`/api/v1/live/${encodeURIComponent(state.liveSession.session_id)}/finalize`, {
       method: "POST"
     });
     const payload = await response.json();
@@ -1625,7 +1625,7 @@ async function uploadLiveChunk(blob, chunkStartSeconds, chunkEndSeconds) {
   formData.append("chunk_start_seconds", String(chunkStartSeconds));
   formData.append("chunk_end_seconds", String(chunkEndSeconds));
 
-  const response = await apiFetch(`/api/live/${encodeURIComponent(state.liveSession.session_id)}/chunk`, {
+  const response = await apiFetch(`/api/v1/live/${encodeURIComponent(state.liveSession.session_id)}/chunk`, {
     method: "POST",
     body: formData
   });
@@ -1852,7 +1852,7 @@ async function runGitlabPlan(dryRun) {
     if (connection.project_id) params.set("gitlab_project_id", connection.project_id);
     if (connection.private_token) params.set("gitlab_private_token", connection.private_token);
   }
-  const url = dryRun ? `/api/gitlab/plan?${params.toString()}` : `/api/gitlab/sync?${params.toString()}`;
+  const url = dryRun ? `/api/v1/gitlab/plan?${params.toString()}` : `/api/v1/gitlab/sync?${params.toString()}`;
   try {
     const response = await apiFetch(url, {
       method: "POST"
@@ -2027,7 +2027,7 @@ async function submitCopilotQuestion() {
   }
 
   try {
-    const response = await apiFetch("/api/chat", {
+    const response = await apiFetch("/api/v1/chat/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
