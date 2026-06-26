@@ -1,5 +1,7 @@
 # BoardSight
 
+Link to Published APP: https://boardsight-copilot.vercel.app/
+
 BoardSight is a multimodal meeting intelligence system for uploaded meeting recordings. It analyzes speech, speaker activity, visual artifacts, decision points, workflow transitions, and participant emotion/attention signals to produce structured outputs for review and export.
 
 The agentic upgrade path is documented in [AGENTIC_ARCHITECTURE.md](/C:/Users/kashm/OneDrive/Desktop/BOARDSIGHT_CV_AGENTIC/AGENTIC_ARCHITECTURE.md). The short version: BoardSight becomes the structured meeting-intelligence backend, while Google Cloud Agent Builder orchestrates actions and GitLab MCP executes approved work.
