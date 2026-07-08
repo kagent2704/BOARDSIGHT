@@ -339,6 +339,33 @@
                     <div class="empty-state">BoardSight will answer from the live transcript accumulated so far.</div>
                   </div>
                 </div>
+
+                <div class="panel nested property-card">
+                  <h4>GitLab Assignment</h4>
+                  <p class="muted">Turn live-session decisions, action items, and blockers into a GitLab issue plan, then push it into your project when it looks right.</p>
+                  <div class="analysis-range-grid">
+                    <label>GitLab Base URL
+                      <input type="text" id="gitlabBaseUrlInput" placeholder="https://gitlab.com">
+                    </label>
+                    <label>Project ID or Path
+                      <input type="text" id="gitlabProjectIdInput" placeholder="group/project or 123456">
+                    </label>
+                  </div>
+                  <label>Private Token
+                    <input type="password" id="gitlabPrivateTokenInput" placeholder="Optional if configured on the backend">
+                  </label>
+                  <label>Assignee Map JSON
+                    <textarea id="gitlabAssigneeMapInput" rows="5" placeholder='{"kash": 123, "akanksha": 456}'></textarea>
+                  </label>
+                  <div class="button-row">
+                    <button id="gitlabPreviewBtn" class="ghost-btn">Preview Plan</button>
+                    <button id="gitlabSyncBtn" class="primary-btn">Assign In GitLab</button>
+                  </div>
+                  <div id="gitlabStatus" class="upload-status">Preview the live-session plan before creating GitLab issues.</div>
+                  <div id="gitlabResult" class="trace-card">
+                    <div class="empty-state">Previewed issues, blockers, and links will appear here.</div>
+                  </div>
+                </div>
               </div>
             </article>
           </section>

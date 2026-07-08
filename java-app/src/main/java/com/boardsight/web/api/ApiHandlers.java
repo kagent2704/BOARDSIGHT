@@ -103,13 +103,22 @@ public final class ApiHandlers {
                     targetUrl = aiServiceUrl + "/api/v1/live/" + URLEncoder.encode(sessionId, StandardCharsets.UTF_8);
                 } else if (parts.length == 5 && "POST".equals(method)) {
                     String action = parts[4];
-                    if (!action.equals("events") && !action.equals("copilot") && !action.equals("finalize")) {
+                    if (!action.equals("events") && !action.equals("copilot") && !action.equals("finalize") && !action.equals("visual")) {
                         HttpUtils.sendJson(exchange, 400, "{\"error\":\"Unsupported live session action.\"}");
                         return;
                     }
                     targetUrl = aiServiceUrl + "/api/v1/live/"
                         + URLEncoder.encode(sessionId, StandardCharsets.UTF_8)
                         + "/" + URLEncoder.encode(action, StandardCharsets.UTF_8);
+                } else if (parts.length == 6 && "POST".equals(method) && "gitlab".equals(parts[4])) {
+                    String action = parts[5];
+                    if (!action.equals("preview") && !action.equals("sync")) {
+                        HttpUtils.sendJson(exchange, 400, "{\"error\":\"Unsupported GitLab live-session action.\"}");
+                        return;
+                    }
+                    targetUrl = aiServiceUrl + "/api/v1/live/"
+                        + URLEncoder.encode(sessionId, StandardCharsets.UTF_8)
+                        + "/gitlab/" + URLEncoder.encode(action, StandardCharsets.UTF_8);
                 } else {
                     HttpUtils.sendJson(exchange, 405, "{\"error\":\"Method not allowed.\"}");
                     return;

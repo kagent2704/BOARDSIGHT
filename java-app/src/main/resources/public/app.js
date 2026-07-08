@@ -86,6 +86,14 @@ const liveAskSummaryBtn = document.getElementById("liveAskSummaryBtn");
 const liveAskDecisionsBtn = document.getElementById("liveAskDecisionsBtn");
 const liveAskActionsBtn = document.getElementById("liveAskActionsBtn");
 const liveAskBlockersBtn = document.getElementById("liveAskBlockersBtn");
+const gitlabBaseUrlInput = document.getElementById("gitlabBaseUrlInput");
+const gitlabProjectIdInput = document.getElementById("gitlabProjectIdInput");
+const gitlabPrivateTokenInput = document.getElementById("gitlabPrivateTokenInput");
+const gitlabAssigneeMapInput = document.getElementById("gitlabAssigneeMapInput");
+const gitlabPreviewBtn = document.getElementById("gitlabPreviewBtn");
+const gitlabSyncBtn = document.getElementById("gitlabSyncBtn");
+const gitlabStatus = document.getElementById("gitlabStatus");
+const gitlabResult = document.getElementById("gitlabResult");
 const floatingLiveLauncher = document.getElementById("floatingLiveLauncher");
 
 let liveRefreshHandle = null;
@@ -187,6 +195,8 @@ liveAskSummaryBtn?.addEventListener("click", () => askLiveShortcut("What happene
 liveAskDecisionsBtn?.addEventListener("click", () => askLiveShortcut("What decisions have been made so far?"));
 liveAskActionsBtn?.addEventListener("click", () => askLiveShortcut("What action items should I know right now?"));
 liveAskBlockersBtn?.addEventListener("click", () => askLiveShortcut("What blockers or risks have been raised so far?"));
+gitlabPreviewBtn?.addEventListener("click", () => runGitLabAssignmentRequest("preview"));
+gitlabSyncBtn?.addEventListener("click", () => runGitLabAssignmentRequest("sync"));
 floatingLiveLauncher?.addEventListener("click", openLiveCopilotPopup);
 
 syncAuthMode();
@@ -1018,6 +1028,12 @@ function setLiveStatus(message) {
   }
 }
 
+function setGitLabStatus(message) {
+  if (gitlabStatus) {
+    gitlabStatus.textContent = message;
+  }
+}
+
 async function startLiveSession() {
   try {
     const title = (liveSessionTitleInput?.value || "").trim() || `Live Session ${new Date().toLocaleTimeString()}`;
@@ -1137,6 +1153,113 @@ function askLiveShortcut(question) {
     liveCopilotQuestionInput.value = question;
   }
   submitLiveQuestion();
+}
+
+function gitLabConnectionPayload() {
+  const payload = {};
+  const baseUrl = (gitlabBaseUrlInput?.value || "").trim();
+  const projectId = (gitlabProjectIdInput?.value || "").trim();
+  const privateToken = (gitlabPrivateTokenInput?.value || "").trim();
+  const assigneeMap = (gitlabAssigneeMapInput?.value || "").trim();
+  if (baseUrl) {
+    payload.base_url = baseUrl;
+  }
+  if (projectId) {
+    payload.project_id = projectId;
+  }
+  if (privateToken) {
+    payload.private_token = privateToken;
+  }
+  if (assigneeMap) {
+    payload.assignee_map = assigneeMap;
+  }
+  return payload;
+}
+
+function renderGitLabResult(payload, mode) {
+  if (!gitlabResult) {
+    return;
+  }
+  const plan = payload.plan || {};
+  const issues = plan.issues || [];
+  const syncResult = payload.sync_result || {};
+  const createdIssues = syncResult.created_issues || [];
+  const createdLinks = syncResult.created_links || [];
+  const summaryLines = [
+    `${mode === "sync" ? "Sync" : "Preview"} status: ${escapeHtml(payload.status || "unknown")}`,
+    `Meeting: ${escapeHtml(payload.meeting_title || plan.meeting_title || "Live session")}`,
+    `Planned issues: ${issues.length}`,
+    `Dependency links: ${(plan.issue_links || []).length}`,
+  ];
+  if (payload.approval_id) {
+    summaryLines.push(`Approval id: ${escapeHtml(payload.approval_id)}`);
+  }
+  if (syncResult.reason) {
+    summaryLines.push(`Reason: ${escapeHtml(syncResult.reason)}`);
+  }
+  if (syncResult.project_id) {
+    summaryLines.push(`Project: ${escapeHtml(syncResult.project_id)}`);
+  }
+
+  const issueLines = issues.length === 0
+    ? ["No issues were generated from the live session yet."]
+    : issues.slice(0, 12).map((issue) => {
+      const owner = issue.owner ? ` | owner ${issue.owner}` : "";
+      const dueDate = issue.due_date ? ` | due ${issue.due_date}` : "";
+      return `${issue.local_key} | ${issue.kind} | ${issue.title}${owner}${dueDate}`;
+    });
+
+  const createdLines = createdIssues.map((issue) => `${issue.local_key} -> #${issue.iid} ${issue.title || ""}`.trim());
+  const linkLines = createdLinks.map((link) => `#${link.source_issue_iid} ${link.link_type || "links"} #${link.target_issue_iid}`);
+
+  gitlabResult.textContent = [
+    summaryLines.join("\n"),
+    "",
+    "Planned issues:",
+    issueLines.join("\n"),
+    createdLines.length > 0 ? `\nCreated issues:\n${createdLines.join("\n")}` : "",
+    linkLines.length > 0 ? `\nCreated links:\n${linkLines.join("\n")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+async function runGitLabAssignmentRequest(mode) {
+  if (!state.liveSession?.session?.id) {
+    setGitLabStatus("Start a live session before using GitLab assignment.");
+    return;
+  }
+
+  const isSync = mode === "sync";
+  setGitLabStatus(isSync ? "Assigning live-session work into GitLab..." : "Building GitLab preview from the live session...");
+
+  try {
+    const requestPayload = { ...gitLabConnectionPayload() };
+    if (isSync && state.liveSession?.gitlabApprovalId) {
+      requestPayload.approval_id = state.liveSession.gitlabApprovalId;
+    }
+    const response = await apiFetch(`/api/live/${encodeURIComponent(state.liveSession.session.id)}/gitlab/${isSync ? "sync" : "preview"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestPayload),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setGitLabStatus(payload.error || payload.detail || "GitLab assignment request failed.");
+      return;
+    }
+    if (payload.approval_id) {
+      state.liveSession = { ...state.liveSession, gitlabApprovalId: payload.approval_id };
+    }
+    renderGitLabResult(payload, mode);
+    setGitLabStatus(
+      isSync
+        ? (payload.sync_result?.status === "synced" ? "GitLab assignment synced successfully." : "GitLab sync completed in preview or dry-run mode.")
+        : "GitLab preview generated from the current live session."
+    );
+  } catch (error) {
+    if (error?.status !== 401) {
+      setGitLabStatus("GitLab assignment is unavailable right now.");
+    }
+  }
 }
 
 async function finalizeLiveSession() {

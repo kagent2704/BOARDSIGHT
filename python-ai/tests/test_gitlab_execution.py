@@ -4,6 +4,7 @@ from boardsight_ai.gitlab_execution import (
     _extract_action_clauses,
     _normalize_due_date,
     build_gitlab_execution_plan,
+    normalize_gitlab_plan_source,
 )
 
 
@@ -62,3 +63,31 @@ def test_build_gitlab_execution_plan_creates_traceable_issues() -> None:
     assert any(issue["kind"] == "blocker" for issue in plan["issues"])
     assert any(issue["assignee_id"] == 101 for issue in plan["issues"])
     assert any(link["link_type"] == "blocks" for link in plan["issue_links"])
+
+
+def test_normalize_gitlab_plan_source_accepts_live_session_payload() -> None:
+    payload = {
+        "session": {"id": 7, "title": "Live Board Review"},
+        "decision_moments": [
+            {"event_id": "E-1", "label": "blocker", "text": "Data contract is still broken.", "speaker": "Akanksha"}
+        ],
+        "workflow_model": {
+            "execution_plan": [
+                {"decision_id": "DM-7", "title": "Fix data contract", "owner": "Kash", "notes": "Before Friday release"}
+            ],
+            "bottlenecks": ["Data contract is still broken."],
+        },
+        "copilot_context": {
+            "decisions": ["Kash will fix the data contract before Friday."],
+            "action_items": ["Kash will fix the data contract before Friday."],
+            "blockers": ["Data contract is still broken."],
+            "discussion_points": ["Release is blocked until the contract is fixed."],
+        },
+    }
+
+    normalized = normalize_gitlab_plan_source(payload)
+
+    assert normalized["decisions"][0]["text"] == "Kash will fix the data contract before Friday."
+    assert normalized["action_items"][0]["owner"] == "Kash"
+    assert normalized["problems"][0]["text"] == "Data contract is still broken."
+    assert normalized["discussion_points"][0] == "Release is blocked until the contract is fixed."

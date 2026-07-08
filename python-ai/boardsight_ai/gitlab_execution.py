@@ -75,6 +75,127 @@ def _extract_action_clauses(text: str) -> list[dict[str, Any]]:
     return clauses
 
 
+def _normalize_problem_entries(entries: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for index, entry in enumerate(entries, start=1):
+        if isinstance(entry, dict):
+            text = str(entry.get("text") or entry.get("title") or entry.get("summary") or "").strip()
+            if not text:
+                continue
+            normalized.append(
+                {
+                    "text": text,
+                    "timestamp": str(entry.get("timestamp") or entry.get("event_id") or f"live-{index}"),
+                    "speaker": str(entry.get("speaker") or "Unknown"),
+                    "category": str(entry.get("category") or "blocker"),
+                }
+            )
+            continue
+        text = str(entry or "").strip()
+        if not text:
+            continue
+        normalized.append(
+            {
+                "text": text,
+                "timestamp": f"live-{index}",
+                "speaker": "Unknown",
+                "category": "blocker",
+            }
+        )
+    return normalized
+
+
+def _normalize_action_entries(entries: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for index, entry in enumerate(entries, start=1):
+        if isinstance(entry, dict):
+            title = str(entry.get("title") or entry.get("text") or entry.get("task") or f"Action item {index}").strip()
+            notes = str(entry.get("notes") or entry.get("description") or entry.get("text") or "").strip()
+            normalized.append(
+                {
+                    "decision_id": str(entry.get("decision_id") or entry.get("event_id") or ""),
+                    "title": title,
+                    "owner": str(entry.get("owner") or entry.get("assignee") or "Unassigned"),
+                    "notes": notes,
+                    "text": str(entry.get("text") or title),
+                    "execution_order": entry.get("execution_order") or index,
+                }
+            )
+            continue
+        text = str(entry or "").strip()
+        if not text:
+            continue
+        owner = _extract_owner(text, "Unassigned")
+        normalized.append(
+            {
+                "decision_id": "",
+                "title": text[:120],
+                "owner": owner,
+                "notes": text,
+                "text": text,
+                "execution_order": index,
+            }
+        )
+    return normalized
+
+
+def _normalize_decision_entries(entries: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for index, entry in enumerate(entries, start=1):
+        if isinstance(entry, dict):
+            text = str(entry.get("text") or entry.get("summary") or entry.get("title") or "").strip()
+            if not text:
+                continue
+            normalized.append(
+                {
+                    "decision_id": str(entry.get("decision_id") or entry.get("event_id") or f"decision-{index}"),
+                    "text": text,
+                }
+            )
+            continue
+        text = str(entry or "").strip()
+        if not text:
+            continue
+        normalized.append({"decision_id": f"decision-{index}", "text": text})
+    return normalized
+
+
+def normalize_gitlab_plan_source(source: dict[str, Any]) -> dict[str, Any]:
+    decisions = list(source.get("decisions", []) or [])
+    action_items = list(source.get("action_items", []) or [])
+    problems = list(source.get("problems", []) or [])
+    discussion_points = list(source.get("discussion_points", []) or [])
+
+    copilot_context = source.get("copilot_context") or {}
+    workflow_model = source.get("workflow_model") or {}
+    decision_moments = list(source.get("decision_moments", []) or [])
+
+    if not decisions and copilot_context.get("decisions"):
+        decisions = list(copilot_context.get("decisions") or [])
+    if not action_items:
+        action_items = list(copilot_context.get("action_items") or [])
+        if workflow_model.get("execution_plan"):
+            action_items.extend(list(workflow_model.get("execution_plan") or []))
+    if not problems:
+        problems = list(copilot_context.get("blockers") or [])
+        if workflow_model.get("bottlenecks"):
+            problems.extend(list(workflow_model.get("bottlenecks") or []))
+        problems.extend(
+            item for item in decision_moments
+            if "block" in str(item.get("label") or "").lower() or "risk" in str(item.get("label") or "").lower()
+        )
+    if not discussion_points and copilot_context.get("discussion_points"):
+        discussion_points = list(copilot_context.get("discussion_points") or [])
+
+    return {
+        "decisions": _normalize_decision_entries(decisions),
+        "action_items": _normalize_action_entries(action_items),
+        "problems": _normalize_problem_entries(problems),
+        "discussion_points": [str(item).strip() for item in discussion_points if str(item).strip()],
+        "workflow_model": {"execution_plan": _normalize_action_entries(list(workflow_model.get("execution_plan") or []))},
+    }
+
+
 def build_gitlab_execution_plan(
     source: dict[str, Any],
     *,
@@ -83,6 +204,7 @@ def build_gitlab_execution_plan(
     meeting_title: str,
     assignee_map: dict[str, int] | None = None,
 ) -> dict[str, Any]:
+    source = normalize_gitlab_plan_source(source)
     assignee_map = assignee_map or {}
     decisions = list(source.get("decisions", []) or [])
     action_items = list(source.get("action_items", []) or source.get("workflow_model", {}).get("execution_plan", []) or [])
