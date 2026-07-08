@@ -233,7 +233,7 @@ async function bootstrapSession() {
   }
 
   try {
-    const response = await apiFetch("/api/auth/me");
+    const response = await apiFetch("/api/v1/me");
     const payload = await response.json();
     state.currentUser = normalizeUser(payload);
     updateUserChip();
@@ -287,7 +287,7 @@ async function registerUser() {
     display_name: displayName,
     role
   });
-  const response = await fetch("/api/auth/register", {
+  const response = await fetch("/api/v1/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -300,7 +300,7 @@ async function registerUser() {
     })
   });
 
-  const queryResponse = response.ok ? response : await fetch(`/api/auth/register?${query.toString()}`, {
+  const queryResponse = response.ok ? response : await fetch(`/api/v1/auth/register?${query.toString()}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -328,14 +328,14 @@ async function registerUser() {
 }
 
 async function submitLogin(username, password) {
-  const response = await fetch("/api/auth/login", {
+  const response = await fetch("/api/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ identifier: username, password })
   });
 
   const queryResponse = response.ok ? response : await fetch(
-    `/api/auth/login?identifier=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+    `/api/v1/auth/login?identifier=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -417,7 +417,7 @@ function updateUserChip() {
 
 async function loadMeetings() {
   try {
-    const response = await apiFetch("/api/meetings");
+    const response = await apiFetch("/api/v1/meetings");
     const payload = await response.json();
     state.meetings = payload.items || [];
     state.sessionHasProcessed = state.meetings.length > 0;
@@ -446,7 +446,7 @@ async function loadMeetingDetail(meetingId) {
   if (!/^\d+$/.test(resolvedMeetingId)) {
     return;
   }
-  const response = await apiFetch(`/api/meeting?id=${encodeURIComponent(resolvedMeetingId)}`);
+  const response = await apiFetch(`/api/v1/meetings/${encodeURIComponent(resolvedMeetingId)}`);
   state.currentMeeting = await response.json();
   state.currentMeetingId = resolvedMeetingId;
   state.sessionHasProcessed = true;
@@ -604,7 +604,7 @@ function renderMeetingDetail() {
   document.getElementById("meetingTitle").textContent = prettifyMeetingId(state.currentMeeting.storage?.meeting_id || state.currentMeetingId);
   document.getElementById("meetingConclusion").textContent = buildMeetingSubtitle(state.currentMeeting);
   loadProtectedImage(
-    `/api/reports/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/summary_card.png`,
+    `/api/v1/meetings/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/reports/summary_card.png`,
     meetingCover
   );
   meetingCover.classList.remove("hidden");
@@ -913,7 +913,7 @@ function renderWorkflow() {
 
 async function loadActiveLiveSession() {
   try {
-    const response = await apiFetch("/api/live/active");
+    const response = await apiFetch("/api/v1/live/active");
     if (!response.ok) {
       renderLiveSession();
       return;
@@ -939,7 +939,7 @@ async function refreshLiveSession() {
     return;
   }
   try {
-    const response = await apiFetch(`/api/live/${encodeURIComponent(state.liveSession.session.id)}`);
+    const response = await apiFetch(`/api/v1/live/${encodeURIComponent(state.liveSession.session.id)}`);
     if (!response.ok) {
       return;
     }
@@ -1021,7 +1021,7 @@ function setLiveStatus(message) {
 async function startLiveSession() {
   try {
     const title = (liveSessionTitleInput?.value || "").trim() || `Live Session ${new Date().toLocaleTimeString()}`;
-    const response = await apiFetch("/api/live/start", {
+    const response = await apiFetch("/api/v1/live/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title })
@@ -1067,7 +1067,7 @@ async function appendLiveUpdate(text) {
   }
   const startSeconds = currentLiveElapsedSeconds();
   const endSeconds = startSeconds + Math.max(4, Math.ceil(normalizedText.split(/\s+/).length / 2));
-  const response = await apiFetch(`/api/live/${encodeURIComponent(state.liveSession.session.id)}/events`, {
+  const response = await apiFetch(`/api/v1/live/${encodeURIComponent(state.liveSession.session.id)}/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1112,7 +1112,7 @@ async function submitLiveQuestion() {
   }
   liveCopilotMeta.textContent = "BoardSight is thinking over the live transcript...";
   try {
-    const response = await apiFetch(`/api/live/${encodeURIComponent(state.liveSession.session.id)}/copilot`, {
+    const response = await apiFetch(`/api/v1/live/${encodeURIComponent(state.liveSession.session.id)}/copilot`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question })
@@ -1145,7 +1145,7 @@ async function finalizeLiveSession() {
     return;
   }
   try {
-    const response = await apiFetch(`/api/live/${encodeURIComponent(state.liveSession.session.id)}/finalize`, {
+    const response = await apiFetch(`/api/v1/live/${encodeURIComponent(state.liveSession.session.id)}/finalize`, {
       method: "POST"
     });
     if (!response.ok) {
@@ -1276,7 +1276,7 @@ async function uploadLiveScreenSample() {
   context.drawImage(liveScreenVideo, 0, 0, liveScreenCanvas.width, liveScreenCanvas.height);
   const imageBase64 = liveScreenCanvas.toDataURL("image/jpeg", 0.82);
   try {
-    const response = await apiFetch(`/api/live/${encodeURIComponent(state.liveSession.session.id)}/visual`, {
+    const response = await apiFetch(`/api/v1/live/${encodeURIComponent(state.liveSession.session.id)}/visual`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1393,7 +1393,7 @@ async function handleUpload(event) {
   setProcessingState(true, `Uploading ${file.name} and running ${profileLabel}...`);
   const formData = new FormData();
   formData.append("file", file);
-  const requestUrl = new URL("/api/analyze", window.location.origin);
+  const requestUrl = new URL("/api/v1/pipeline/run", window.location.origin);
   requestUrl.searchParams.set("analysis_profile", analysisProfile);
   if (startSeconds !== null) {
     requestUrl.searchParams.set("start_seconds", String(startSeconds));
@@ -1467,7 +1467,7 @@ function setView(viewName) {
 function openReport(fileName) {
   if (!state.currentMeetingId) return;
   downloadProtectedFile(
-    `/api/reports/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/${fileName}`,
+    `/api/v1/meetings/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/reports/${fileName}`,
     fileName
   );
 }
