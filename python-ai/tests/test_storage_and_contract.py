@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from boardsight_ai.database import execute, table_columns
 from boardsight_ai.agentic_contract import build_agentic_contract
-from boardsight_ai.storage import get_meeting_result, list_meeting_results, save_meeting_result
+from boardsight_ai.storage import create_live_session, get_meeting_result, init_storage, list_live_sessions, list_meeting_results, save_meeting_result
 
 
 def test_save_meeting_result_round_trips_sqlite_record(tmp_path: Path, sample_pipeline_result) -> None:
@@ -49,3 +50,26 @@ def test_build_agentic_contract_includes_actions_and_risk_signals(sample_pipelin
     assert len(contract["entities"]["actions"]) == 2
     assert len(contract["entities"]["risk_signals"]) >= 2
     assert contract["execution_graph"]["top_decision_id"] == "DM-1"
+
+
+def test_init_storage_migrates_legacy_live_session_schema(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy-live.db"
+    execute(
+        db_path,
+        """
+        CREATE TABLE live_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL
+        )
+        """,
+    )
+
+    init_storage(db_path)
+    session_id = create_live_session(db_path, "Legacy session", user_id=3, username="admin")
+    rows = list_live_sessions(db_path, user_id=3, status="active")
+    migrated_columns = table_columns(db_path, "live_sessions")
+
+    assert session_id > 0
+    assert rows
+    assert rows[0]["title"] == "Legacy session"
+    assert {"user_id", "username", "status", "transcript_text", "last_copilot_source", "last_copilot_answer"} <= migrated_columns

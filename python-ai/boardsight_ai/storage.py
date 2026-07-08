@@ -100,6 +100,22 @@ def init_storage(database_path: Path) -> None:
         """,
     )
 
+    live_session_columns = table_columns(database_path, "live_sessions")
+    required_live_session_columns: dict[str, str] = {
+        "user_id": "BIGINT" if is_postgres(database_path) else "INTEGER",
+        "username": "TEXT",
+        "status": "TEXT NOT NULL DEFAULT 'active'",
+        "transcript_text": "TEXT DEFAULT ''",
+        "started_at": f"{timestamp_type} DEFAULT {created_default}",
+        "updated_at": f"{timestamp_type} DEFAULT {created_default}",
+        "finalized_at": timestamp_type,
+        "last_copilot_source": "TEXT DEFAULT ''",
+        "last_copilot_answer": "TEXT DEFAULT ''",
+    }
+    for column_name, column_type in required_live_session_columns.items():
+        if column_name not in live_session_columns:
+            execute(database_path, f"ALTER TABLE live_sessions ADD COLUMN {column_name} {column_type}")
+
     execute(
         database_path,
         f"""
@@ -114,6 +130,17 @@ def init_storage(database_path: Path) -> None:
         )
         """,
     )
+
+    live_event_columns = table_columns(database_path, "live_session_events")
+    required_live_event_columns: dict[str, str] = {
+        "speaker": "TEXT",
+        "start_seconds": f"{float_type} DEFAULT 0",
+        "end_seconds": f"{float_type} DEFAULT 0",
+        "created_at": f"{timestamp_type} DEFAULT {created_default}",
+    }
+    for column_name, column_type in required_live_event_columns.items():
+        if column_name not in live_event_columns:
+            execute(database_path, f"ALTER TABLE live_session_events ADD COLUMN {column_name} {column_type}")
 
     execute(
         database_path,
@@ -137,6 +164,26 @@ def init_storage(database_path: Path) -> None:
         )
         """,
     )
+
+    live_visual_columns = table_columns(database_path, "live_session_visual_events")
+    required_live_visual_columns: dict[str, str] = {
+        "timestamp_seconds": f"{float_type} DEFAULT 0",
+        "artifact_type": "TEXT DEFAULT ''",
+        "display_mode": "TEXT DEFAULT ''",
+        "visible_people_count": "INTEGER DEFAULT 0",
+        "screen_present": "INTEGER DEFAULT 0",
+        "chart_present": "INTEGER DEFAULT 0",
+        "document_present": "INTEGER DEFAULT 0",
+        "textual_content": "TEXT DEFAULT ''",
+        "summary": "TEXT DEFAULT ''",
+        "confidence": f"{float_type} DEFAULT 0",
+        "detections_json": "TEXT DEFAULT '[]'",
+        "source": "TEXT DEFAULT ''",
+        "created_at": f"{timestamp_type} DEFAULT {created_default}",
+    }
+    for column_name, column_type in required_live_visual_columns.items():
+        if column_name not in live_visual_columns:
+            execute(database_path, f"ALTER TABLE live_session_visual_events ADD COLUMN {column_name} {column_type}")
 
 
 def save_meeting_result(
