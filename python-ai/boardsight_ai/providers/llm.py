@@ -26,9 +26,14 @@ def _extract_text_from_gemini_payload(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _gemini_generate_text(prompt: str, config: AppConfig, *, response_mime_type: str = "text/plain") -> tuple[str, str] | None:
+def _gemini_generate_text(
+    prompt: str,
+    config: AppConfig,
+    *,
+    response_mime_type: str = "text/plain",
+) -> tuple[str, str] | None:
     api_key = (config.gemini_api_key or "").strip()
-    if config.llm_provider != "gemini" or not api_key:
+    if config.llm_provider.strip().lower() != "gemini" or not api_key:
         return None
 
     url = (
@@ -80,22 +85,19 @@ def _summarizer() -> tuple[Any, Any, Any, str, str] | None:
         return None
 
 
-def _transformer_summary(text: str) -> tuple[str, str] | None:
+def _transformer_generate(
+    prompt: str,
+    *,
+    max_new_tokens: int = 144,
+    min_new_tokens: int = 24,
+) -> tuple[str, str] | None:
     summarizer = _summarizer()
     if summarizer is None:
         return None
     try:
         tokenizer, model, torch, device, model_name = summarizer
-        normalized_text = " ".join(str(text or "").split())
-        prompt = (
-            "You are summarizing slide evidence and nearby meeting transcript. "
-            "Write exactly 2 concise sentences with no numbering or labels. "
-            "State the main topic of the presentation, then mention one or two concrete takeaways mentioned in the slide evidence or transcript. "
-            "Prefer specific subject words that appear in the evidence.\n\n"
-            f"{normalized_text}"
-        )
         inputs = tokenizer(
-            prompt,
+            " ".join(str(prompt or "").split()),
             return_tensors="pt",
             truncation=True,
             max_length=512,
@@ -104,15 +106,15 @@ def _transformer_summary(text: str) -> tuple[str, str] | None:
             inputs = {key: value.to(device) for key, value in inputs.items()}
         generated = model.generate(
             **inputs,
-            max_new_tokens=72,
-            min_new_tokens=12,
+            max_new_tokens=max_new_tokens,
+            min_new_tokens=min_new_tokens,
             do_sample=False,
             num_beams=4,
             no_repeat_ngram_size=3,
         )
-        summary = tokenizer.decode(generated[0], skip_special_tokens=True).strip()
-        if summary:
-            return summary, f"transformers:{model_name}"
+        text = tokenizer.decode(generated[0], skip_special_tokens=True).strip()
+        if text:
+            return text, f"transformers:{model_name}"
     except Exception:
         return None
     return None
@@ -131,7 +133,16 @@ def summarize(text: str, config: AppConfig) -> tuple[str, str]:
     if gemini_response is not None and gemini_response[0]:
         return gemini_response
 
-    transformer_response = _transformer_summary(text)
+    transformer_response = _transformer_generate(
+        (
+            "You are summarizing slide evidence and nearby meeting transcript. "
+            "Write exactly 2 concise sentences with no numbering or labels. "
+            "State the main topic, then mention one or two concrete takeaways.\n\n"
+            f"{' '.join(str(text or '').split())[:4000]}"
+        ),
+        max_new_tokens=72,
+        min_new_tokens=12,
+    )
     if transformer_response is not None:
         return transformer_response
 
@@ -161,8 +172,29 @@ def answer_question(prompt: str, config: AppConfig) -> tuple[str, str]:
     if gemini_response is not None and gemini_response[0]:
         return gemini_response
 
-    transformer_response = _transformer_summary(prompt)
+    transformer_response = _transformer_generate(prompt, max_new_tokens=96, min_new_tokens=8)
     if transformer_response is not None:
         return transformer_response
 
-    return "I could not reach a chat model, so live copilot reasoning is temporarily unavailable.", "model-unavailable"
+    return "I could not reach a chat model, so copilot reasoning is temporarily unavailable.", "model-unavailable"
+
+
+def generate_text(
+    prompt: str,
+    config: AppConfig,
+    max_new_tokens: int = 144,
+    min_new_tokens: int = 24,
+) -> tuple[str, str]:
+    gemini_response = _gemini_generate_text(prompt, config)
+    if gemini_response is not None and gemini_response[0]:
+        return gemini_response
+
+    transformer_response = _transformer_generate(
+        prompt,
+        max_new_tokens=max_new_tokens,
+        min_new_tokens=min_new_tokens,
+    )
+    if transformer_response is not None:
+        return transformer_response
+
+    return "", "model-unavailable"

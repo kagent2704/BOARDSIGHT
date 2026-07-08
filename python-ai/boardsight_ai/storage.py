@@ -1,127 +1,142 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
 
+from boardsight_ai.database import execute, fetchall, fetchone, insert_and_return_id, is_postgres, table_columns
 from boardsight_ai.models import PipelineResult
 
 
 def init_storage(database_path: Path) -> None:
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS meetings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                username TEXT,
-                run_name TEXT,
-                input_video TEXT NOT NULL,
-                output_dir TEXT,
-                result_file TEXT,
-                transcript_text TEXT,
-                speaker_count INTEGER DEFAULT 0,
-                decision_count INTEGER DEFAULT 0,
-                visual_artifact_count INTEGER DEFAULT 0,
-                top_decision_id TEXT,
-                overall_attention REAL DEFAULT 0,
-                overall_sentiment TEXT,
-                impact_score REAL DEFAULT 0,
-                productivity_score REAL DEFAULT 0,
-                execution_readiness REAL DEFAULT 0,
-                dominance_ratio REAL DEFAULT 0,
-                runtime_profile TEXT,
-                data_contract_version TEXT,
-                result_json TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
+    numeric_id_type = "BIGSERIAL" if is_postgres(database_path) else "INTEGER"
+    auto_increment = " PRIMARY KEY" if is_postgres(database_path) else " PRIMARY KEY AUTOINCREMENT"
+    float_type = "DOUBLE PRECISION" if is_postgres(database_path) else "REAL"
+    timestamp_type = "TIMESTAMP" if is_postgres(database_path) else "TEXT"
+    created_default = "CURRENT_TIMESTAMP"
 
-        existing_columns = {
-            row[1]
-            for row in connection.execute("PRAGMA table_info(meetings)").fetchall()
-        }
-        required_columns: dict[str, str] = {
-            "user_id": "INTEGER",
-            "username": "TEXT",
-            "run_name": "TEXT",
-            "output_dir": "TEXT",
-            "result_file": "TEXT",
-            "transcript_text": "TEXT",
-            "speaker_count": "INTEGER DEFAULT 0",
-            "decision_count": "INTEGER DEFAULT 0",
-            "visual_artifact_count": "INTEGER DEFAULT 0",
-            "top_decision_id": "TEXT",
-            "overall_attention": "REAL DEFAULT 0",
-            "overall_sentiment": "TEXT",
-            "impact_score": "REAL DEFAULT 0",
-            "productivity_score": "REAL DEFAULT 0",
-            "execution_readiness": "REAL DEFAULT 0",
-            "dominance_ratio": "REAL DEFAULT 0",
-            "runtime_profile": "TEXT",
-            "data_contract_version": "TEXT",
-        }
-        for column_name, column_type in required_columns.items():
-            if column_name not in existing_columns:
-                connection.execute(f"ALTER TABLE meetings ADD COLUMN {column_name} {column_type}")
+    execute(
+        database_path,
+        f"""
+        CREATE TABLE IF NOT EXISTS meetings (
+            id {numeric_id_type}{auto_increment},
+            user_id {"BIGINT" if is_postgres(database_path) else "INTEGER"},
+            username TEXT,
+            run_name TEXT,
+            input_video TEXT NOT NULL,
+            output_dir TEXT,
+            result_file TEXT,
+            transcript_text TEXT,
+            speaker_count INTEGER DEFAULT 0,
+            decision_count INTEGER DEFAULT 0,
+            visual_artifact_count INTEGER DEFAULT 0,
+            top_decision_id TEXT,
+            overall_attention {float_type} DEFAULT 0,
+            overall_sentiment TEXT,
+            impact_score {float_type} DEFAULT 0,
+            productivity_score {float_type} DEFAULT 0,
+            execution_readiness {float_type} DEFAULT 0,
+            dominance_ratio {float_type} DEFAULT 0,
+            runtime_profile TEXT,
+            data_contract_version TEXT,
+            analysis_profile TEXT,
+            source_mode TEXT,
+            run_status TEXT DEFAULT 'completed',
+            execution_task_count INTEGER DEFAULT 0,
+            risk_signal_count INTEGER DEFAULT 0,
+            contract_version TEXT,
+            result_json TEXT NOT NULL,
+            created_at {timestamp_type} DEFAULT {created_default}
+        )
+        """,
+    )
 
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS live_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                username TEXT,
-                title TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'active',
-                transcript_text TEXT DEFAULT '',
-                started_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                finalized_at TEXT,
-                last_copilot_source TEXT DEFAULT '',
-                last_copilot_answer TEXT DEFAULT ''
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS live_session_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
-                speaker TEXT,
-                text TEXT NOT NULL,
-                start_seconds REAL DEFAULT 0,
-                end_seconds REAL DEFAULT 0,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS live_session_visual_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
-                timestamp_seconds REAL DEFAULT 0,
-                artifact_type TEXT DEFAULT '',
-                display_mode TEXT DEFAULT '',
-                visible_people_count INTEGER DEFAULT 0,
-                screen_present INTEGER DEFAULT 0,
-                chart_present INTEGER DEFAULT 0,
-                document_present INTEGER DEFAULT 0,
-                textual_content TEXT DEFAULT '',
-                summary TEXT DEFAULT '',
-                confidence REAL DEFAULT 0,
-                detections_json TEXT DEFAULT '[]',
-                source TEXT DEFAULT '',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
-            )
-            """
-        )
+    existing_columns = table_columns(database_path, "meetings")
+    required_columns: dict[str, str] = {
+        "user_id": "BIGINT" if is_postgres(database_path) else "INTEGER",
+        "username": "TEXT",
+        "run_name": "TEXT",
+        "output_dir": "TEXT",
+        "result_file": "TEXT",
+        "transcript_text": "TEXT",
+        "speaker_count": "INTEGER DEFAULT 0",
+        "decision_count": "INTEGER DEFAULT 0",
+        "visual_artifact_count": "INTEGER DEFAULT 0",
+        "top_decision_id": "TEXT",
+        "overall_attention": f"{float_type} DEFAULT 0",
+        "overall_sentiment": "TEXT",
+        "impact_score": f"{float_type} DEFAULT 0",
+        "productivity_score": f"{float_type} DEFAULT 0",
+        "execution_readiness": f"{float_type} DEFAULT 0",
+        "dominance_ratio": f"{float_type} DEFAULT 0",
+        "runtime_profile": "TEXT",
+        "data_contract_version": "TEXT",
+        "analysis_profile": "TEXT",
+        "source_mode": "TEXT",
+        "run_status": "TEXT DEFAULT 'completed'",
+        "execution_task_count": "INTEGER DEFAULT 0",
+        "risk_signal_count": "INTEGER DEFAULT 0",
+        "contract_version": "TEXT",
+    }
+    for column_name, column_type in required_columns.items():
+        if column_name not in existing_columns:
+            execute(database_path, f"ALTER TABLE meetings ADD COLUMN {column_name} {column_type}")
 
-        connection.commit()
+    execute(
+        database_path,
+        f"""
+        CREATE TABLE IF NOT EXISTS live_sessions (
+            id {numeric_id_type}{auto_increment},
+            user_id {"BIGINT" if is_postgres(database_path) else "INTEGER"},
+            username TEXT,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            transcript_text TEXT DEFAULT '',
+            started_at {timestamp_type} DEFAULT {created_default},
+            updated_at {timestamp_type} DEFAULT {created_default},
+            finalized_at {timestamp_type},
+            last_copilot_source TEXT DEFAULT '',
+            last_copilot_answer TEXT DEFAULT ''
+        )
+        """,
+    )
+
+    execute(
+        database_path,
+        f"""
+        CREATE TABLE IF NOT EXISTS live_session_events (
+            id {numeric_id_type}{auto_increment},
+            session_id {"BIGINT" if is_postgres(database_path) else "INTEGER"} NOT NULL,
+            speaker TEXT,
+            text TEXT NOT NULL,
+            start_seconds {float_type} DEFAULT 0,
+            end_seconds {float_type} DEFAULT 0,
+            created_at {timestamp_type} DEFAULT {created_default}
+        )
+        """,
+    )
+
+    execute(
+        database_path,
+        f"""
+        CREATE TABLE IF NOT EXISTS live_session_visual_events (
+            id {numeric_id_type}{auto_increment},
+            session_id {"BIGINT" if is_postgres(database_path) else "INTEGER"} NOT NULL,
+            timestamp_seconds {float_type} DEFAULT 0,
+            artifact_type TEXT DEFAULT '',
+            display_mode TEXT DEFAULT '',
+            visible_people_count INTEGER DEFAULT 0,
+            screen_present INTEGER DEFAULT 0,
+            chart_present INTEGER DEFAULT 0,
+            document_present INTEGER DEFAULT 0,
+            textual_content TEXT DEFAULT '',
+            summary TEXT DEFAULT '',
+            confidence {float_type} DEFAULT 0,
+            detections_json TEXT DEFAULT '[]',
+            source TEXT DEFAULT '',
+            created_at {timestamp_type} DEFAULT {created_default}
+        )
+        """,
+    )
 
 
 def save_meeting_result(
@@ -142,57 +157,96 @@ def save_meeting_result(
         if result.workflow_model.prioritized_decisions
         else None
     )
-    with sqlite3.connect(database_path) as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO meetings (
-                user_id,
-                username,
-                run_name,
-                input_video,
-                output_dir,
-                result_file,
-                transcript_text,
-                speaker_count,
-                decision_count,
-                visual_artifact_count,
-                top_decision_id,
-                overall_attention,
-                overall_sentiment,
-                impact_score,
-                productivity_score,
-                execution_readiness,
-                dominance_ratio,
-                runtime_profile,
-                data_contract_version,
-                result_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user_id,
-                username,
-                output_dir.name if output_dir is not None else None,
-                result.input_video,
-                str(output_dir) if output_dir is not None else None,
-                str(result_file) if result_file is not None else None,
-                result.transcript.full_text,
-                len(result.speaker_dominance.speakers),
-                len(result.decision_moments),
-                len(result.visual_artifacts),
-                top_decision_id,
-                result.attention_sentiment.overall_attention,
-                result.attention_sentiment.overall_sentiment,
-                result.meeting_scores.impact_score,
-                result.meeting_scores.productivity_score,
-                result.meeting_scores.execution_readiness,
-                top_speaker_ratio,
-                str(result.metadata.get("performance_report", {}).get("runtime_profile", "")),
-                str(result.metadata.get("data_contract_version", "")),
-                payload,
-            ),
+    agentic_contract = result.metadata.get("agentic_contract", {}) if isinstance(result.metadata, dict) else {}
+    risk_signals = agentic_contract.get("entities", {}).get("risk_signals", []) if isinstance(agentic_contract, dict) else []
+    return insert_and_return_id(
+        database_path,
+        """
+        INSERT INTO meetings (
+            user_id,
+            username,
+            run_name,
+            input_video,
+            output_dir,
+            result_file,
+            transcript_text,
+            speaker_count,
+            decision_count,
+            visual_artifact_count,
+            top_decision_id,
+            overall_attention,
+            overall_sentiment,
+            impact_score,
+            productivity_score,
+            execution_readiness,
+            dominance_ratio,
+            runtime_profile,
+            data_contract_version,
+            analysis_profile,
+            source_mode,
+            run_status,
+            execution_task_count,
+            risk_signal_count,
+            contract_version,
+            result_json
+        ) VALUES (
+            :user_id,
+            :username,
+            :run_name,
+            :input_video,
+            :output_dir,
+            :result_file,
+            :transcript_text,
+            :speaker_count,
+            :decision_count,
+            :visual_artifact_count,
+            :top_decision_id,
+            :overall_attention,
+            :overall_sentiment,
+            :impact_score,
+            :productivity_score,
+            :execution_readiness,
+            :dominance_ratio,
+            :runtime_profile,
+            :data_contract_version,
+            :analysis_profile,
+            :source_mode,
+            :run_status,
+            :execution_task_count,
+            :risk_signal_count,
+            :contract_version,
+            :result_json
         )
-        connection.commit()
-        return int(cursor.lastrowid)
+        """,
+        {
+            "user_id": user_id,
+            "username": username,
+            "run_name": output_dir.name if output_dir is not None else None,
+            "input_video": result.input_video,
+            "output_dir": str(output_dir) if output_dir is not None else None,
+            "result_file": str(result_file) if result_file is not None else None,
+            "transcript_text": result.transcript.full_text,
+            "speaker_count": len(result.speaker_dominance.speakers),
+            "decision_count": len(result.decision_moments),
+            "visual_artifact_count": len(result.visual_artifacts),
+            "top_decision_id": top_decision_id,
+            "overall_attention": result.attention_sentiment.overall_attention,
+            "overall_sentiment": result.attention_sentiment.overall_sentiment,
+            "impact_score": result.meeting_scores.impact_score,
+            "productivity_score": result.meeting_scores.productivity_score,
+            "execution_readiness": result.meeting_scores.execution_readiness,
+            "dominance_ratio": top_speaker_ratio,
+            "runtime_profile": str(result.metadata.get("performance_report", {}).get("runtime_profile", "")),
+            "data_contract_version": str(result.metadata.get("data_contract_version", "")),
+            "analysis_profile": result.metadata.get("analysis_profile"),
+            "source_mode": result.metadata.get("source_mode"),
+            "run_status": "completed",
+            "execution_task_count": len(result.workflow_model.execution_plan),
+            "risk_signal_count": len(risk_signals),
+            "contract_version": agentic_contract.get("contract_version"),
+            "result_json": payload,
+        },
+    )
 
 
 def list_meeting_results(database_path: Path, user_id: int | None = None) -> list[dict]:
@@ -218,46 +272,40 @@ def list_meeting_results(database_path: Path, user_id: int | None = None) -> lis
             dominance_ratio,
             runtime_profile,
             data_contract_version,
+            analysis_profile,
+            source_mode,
+            run_status,
+            execution_task_count,
+            risk_signal_count,
+            contract_version,
             created_at
         FROM meetings
     """
-    params: tuple = ()
+    params: dict[str, object] = {}
     if user_id is not None:
-        query += " WHERE user_id = ?"
-        params = (user_id,)
+        query += " WHERE user_id = :user_id"
+        params["user_id"] = user_id
     query += " ORDER BY id DESC"
-
-    with sqlite3.connect(database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(query, params).fetchall()
-    return [dict(row) for row in rows]
+    return fetchall(database_path, query, params)
 
 
 def get_meeting_result(database_path: Path, meeting_id: int, user_id: int | None = None) -> dict | None:
     init_storage(database_path)
-    query = "SELECT * FROM meetings WHERE id = ?"
-    params: tuple = (meeting_id,)
+    query = "SELECT * FROM meetings WHERE id = :meeting_id"
+    params: dict[str, object] = {"meeting_id": meeting_id}
     if user_id is not None:
-        query += " AND user_id = ?"
-        params = (meeting_id, user_id)
-    with sqlite3.connect(database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        row = connection.execute(query, params).fetchone()
-    return dict(row) if row is not None else None
+        query += " AND user_id = :user_id"
+        params["user_id"] = user_id
+    return fetchone(database_path, query, params)
 
 
 def create_live_session(database_path: Path, title: str, user_id: int | None = None, username: str | None = None) -> int:
     init_storage(database_path)
-    with sqlite3.connect(database_path) as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO live_sessions (user_id, username, title)
-            VALUES (?, ?, ?)
-            """,
-            (user_id, username, title),
-        )
-        connection.commit()
-        return int(cursor.lastrowid)
+    return insert_and_return_id(
+        database_path,
+        "INSERT INTO live_sessions (user_id, username, title) VALUES (:user_id, :username, :title)",
+        {"user_id": user_id, "username": username, "title": title},
+    )
 
 
 def append_live_session_event(
@@ -274,41 +322,35 @@ def append_live_session_event(
         raise ValueError("Live session event text is required.")
     start_value = float(start_seconds or 0.0)
     end_value = float(end_seconds if end_seconds is not None else start_value + 4.0)
-    with sqlite3.connect(database_path) as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO live_session_events (session_id, speaker, text, start_seconds, end_seconds)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (session_id, speaker, normalized_text, start_value, end_value),
-        )
-        transcript_row = connection.execute(
-            """
-            SELECT GROUP_CONCAT(
-                CASE
-                    WHEN speaker IS NOT NULL AND TRIM(speaker) <> '' THEN speaker || ': ' || text
-                    ELSE text
-                END,
-                ' '
-            )
-            FROM live_session_events
-            WHERE session_id = ?
-            ORDER BY id
-            """,
-            (session_id,),
-        ).fetchone()
-        transcript_text = str((transcript_row[0] if transcript_row is not None else "") or "")
-        connection.execute(
-            """
-            UPDATE live_sessions
-            SET transcript_text = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (transcript_text, session_id),
-        )
-        connection.commit()
-        return int(cursor.lastrowid)
+    event_id = insert_and_return_id(
+        database_path,
+        """
+        INSERT INTO live_session_events (session_id, speaker, text, start_seconds, end_seconds)
+        VALUES (:session_id, :speaker, :text, :start_seconds, :end_seconds)
+        """,
+        {
+            "session_id": session_id,
+            "speaker": speaker,
+            "text": normalized_text,
+            "start_seconds": start_value,
+            "end_seconds": end_value,
+        },
+    )
+    event_rows = get_live_session_events(database_path, session_id)
+    transcript_text = " ".join(
+        f"{row['speaker']}: {row['text']}" if str(row.get("speaker") or "").strip() else str(row.get("text") or "")
+        for row in event_rows
+    ).strip()
+    execute(
+        database_path,
+        """
+        UPDATE live_sessions
+        SET transcript_text = :transcript_text, updated_at = CURRENT_TIMESTAMP
+        WHERE id = :session_id
+        """,
+        {"transcript_text": transcript_text, "session_id": session_id},
+    )
+    return event_id
 
 
 def list_live_sessions(database_path: Path, user_id: int | None = None, status: str | None = None) -> list[dict]:
@@ -328,50 +370,42 @@ def list_live_sessions(database_path: Path, user_id: int | None = None, status: 
             last_copilot_answer
         FROM live_sessions
     """
-    params: list[object] = []
+    params: dict[str, object] = {}
     filters: list[str] = []
     if user_id is not None:
-        filters.append("user_id = ?")
-        params.append(user_id)
+        filters.append("user_id = :user_id")
+        params["user_id"] = user_id
     if status is not None:
-        filters.append("status = ?")
-        params.append(status)
+        filters.append("status = :status")
+        params["status"] = status
     if filters:
         query += " WHERE " + " AND ".join(filters)
     query += " ORDER BY id DESC"
-    with sqlite3.connect(database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(query, tuple(params)).fetchall()
-    return [dict(row) for row in rows]
+    return fetchall(database_path, query, params)
 
 
 def get_live_session(database_path: Path, session_id: int, user_id: int | None = None) -> dict | None:
     init_storage(database_path)
-    query = "SELECT * FROM live_sessions WHERE id = ?"
-    params: tuple[object, ...] = (session_id,)
+    query = "SELECT * FROM live_sessions WHERE id = :session_id"
+    params: dict[str, object] = {"session_id": session_id}
     if user_id is not None:
-        query += " AND user_id = ?"
-        params = (session_id, user_id)
-    with sqlite3.connect(database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        row = connection.execute(query, params).fetchone()
-    return dict(row) if row is not None else None
+        query += " AND user_id = :user_id"
+        params["user_id"] = user_id
+    return fetchone(database_path, query, params)
 
 
 def get_live_session_events(database_path: Path, session_id: int) -> list[dict]:
     init_storage(database_path)
-    with sqlite3.connect(database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            """
-            SELECT id, session_id, speaker, text, start_seconds, end_seconds, created_at
-            FROM live_session_events
-            WHERE session_id = ?
-            ORDER BY id
-            """,
-            (session_id,),
-        ).fetchall()
-    return [dict(row) for row in rows]
+    return fetchall(
+        database_path,
+        """
+        SELECT id, session_id, speaker, text, start_seconds, end_seconds, created_at
+        FROM live_session_events
+        WHERE session_id = :session_id
+        ORDER BY id
+        """,
+        {"session_id": session_id},
+    )
 
 
 def append_live_visual_event(
@@ -391,81 +425,90 @@ def append_live_visual_event(
     source: str = "",
 ) -> int:
     init_storage(database_path)
-    with sqlite3.connect(database_path) as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO live_session_visual_events (
-                session_id,
-                timestamp_seconds,
-                artifact_type,
-                display_mode,
-                visible_people_count,
-                screen_present,
-                chart_present,
-                document_present,
-                textual_content,
-                summary,
-                confidence,
-                detections_json,
-                source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                session_id,
-                float(timestamp_seconds),
-                str(artifact_type or ""),
-                str(display_mode or ""),
-                int(visible_people_count or 0),
-                1 if screen_present else 0,
-                1 if chart_present else 0,
-                1 if document_present else 0,
-                str(textual_content or ""),
-                str(summary or ""),
-                float(confidence or 0.0),
-                json.dumps(detections or []),
-                str(source or ""),
-            ),
+    visual_event_id = insert_and_return_id(
+        database_path,
+        """
+        INSERT INTO live_session_visual_events (
+            session_id,
+            timestamp_seconds,
+            artifact_type,
+            display_mode,
+            visible_people_count,
+            screen_present,
+            chart_present,
+            document_present,
+            textual_content,
+            summary,
+            confidence,
+            detections_json,
+            source
+        ) VALUES (
+            :session_id,
+            :timestamp_seconds,
+            :artifact_type,
+            :display_mode,
+            :visible_people_count,
+            :screen_present,
+            :chart_present,
+            :document_present,
+            :textual_content,
+            :summary,
+            :confidence,
+            :detections_json,
+            :source
         )
-        connection.execute(
-            """
-            UPDATE live_sessions
-            SET updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (session_id,),
-        )
-        connection.commit()
-        return int(cursor.lastrowid)
+        """,
+        {
+            "session_id": session_id,
+            "timestamp_seconds": float(timestamp_seconds),
+            "artifact_type": str(artifact_type or ""),
+            "display_mode": str(display_mode or ""),
+            "visible_people_count": int(visible_people_count or 0),
+            "screen_present": 1 if screen_present else 0,
+            "chart_present": 1 if chart_present else 0,
+            "document_present": 1 if document_present else 0,
+            "textual_content": str(textual_content or ""),
+            "summary": str(summary or ""),
+            "confidence": float(confidence or 0.0),
+            "detections_json": json.dumps(detections or []),
+            "source": str(source or ""),
+        },
+    )
+    execute(
+        database_path,
+        "UPDATE live_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = :session_id",
+        {"session_id": session_id},
+    )
+    return visual_event_id
 
 
 def get_live_session_visual_events(database_path: Path, session_id: int) -> list[dict]:
     init_storage(database_path)
-    with sqlite3.connect(database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            """
-            SELECT
-                id,
-                session_id,
-                timestamp_seconds,
-                artifact_type,
-                display_mode,
-                visible_people_count,
-                screen_present,
-                chart_present,
-                document_present,
-                textual_content,
-                summary,
-                confidence,
-                detections_json,
-                source,
-                created_at
-            FROM live_session_visual_events
-            WHERE session_id = ?
-            ORDER BY id
-            """,
-            (session_id,),
-        ).fetchall()
+    rows = fetchall(
+        database_path,
+        """
+        SELECT
+            id,
+            session_id,
+            timestamp_seconds,
+            artifact_type,
+            display_mode,
+            visible_people_count,
+            screen_present,
+            chart_present,
+            document_present,
+            textual_content,
+            summary,
+            confidence,
+            detections_json,
+            source,
+            created_at
+        FROM live_session_visual_events
+        WHERE session_id = :session_id
+        ORDER BY id
+        """,
+        {"session_id": session_id},
+    )
     items: list[dict] = []
     for row in rows:
         item = dict(row)
@@ -479,31 +522,27 @@ def get_live_session_visual_events(database_path: Path, session_id: int) -> list
 
 def finalize_live_session(database_path: Path, session_id: int) -> None:
     init_storage(database_path)
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            """
-            UPDATE live_sessions
-            SET status = 'finalized',
-                finalized_at = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (session_id,),
-        )
-        connection.commit()
+    execute(
+        database_path,
+        """
+        UPDATE live_sessions
+        SET status = 'finalized', finalized_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = :session_id
+        """,
+        {"session_id": session_id},
+    )
 
 
 def save_live_copilot_reply(database_path: Path, session_id: int, answer: str, source: str) -> None:
     init_storage(database_path)
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            """
-            UPDATE live_sessions
-            SET last_copilot_answer = ?,
-                last_copilot_source = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (answer, source, session_id),
-        )
-        connection.commit()
+    execute(
+        database_path,
+        """
+        UPDATE live_sessions
+        SET last_copilot_answer = :answer,
+            last_copilot_source = :source,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = :session_id
+        """,
+        {"answer": answer, "source": source, "session_id": session_id},
+    )

@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from boardsight_ai.config import AppConfig, default_config
+from boardsight_ai.agentic_contract import build_agentic_contract
+from boardsight_ai.config import AppConfig, default_config, resolve_runtime_config
 from boardsight_ai.evaluation import write_evaluation
 from boardsight_ai.lightweight_pipeline import run_lightweight_pipeline
 from boardsight_ai.models import PipelineResult
@@ -17,15 +18,32 @@ def run_pipeline(
     config: AppConfig | None = None,
     analysis_range: dict[str, float | None] | None = None,
     analysis_profile: str | None = None,
+    source_mode: str = "recorded",
 ) -> PipelineResult:
-    resolved_config = config or default_config(output_root=output_dir)
-    return run_lightweight_pipeline(
+    if config is None:
+        runtime_config = resolve_runtime_config(
+            default_config(output_root=output_dir),
+            analysis_profile=analysis_profile,
+            source_mode=source_mode,
+        )
+    else:
+        runtime_config = config
+    result = run_lightweight_pipeline(
         video_path,
         output_dir,
-        resolved_config,
+        runtime_config,
         analysis_range=analysis_range,
-        requested_profile=analysis_profile,
+        requested_profile=analysis_profile or runtime_config.default_analysis_profile,
     )
+    result.metadata["analysis_profile"] = analysis_profile or runtime_config.default_analysis_profile
+    result.metadata["source_mode"] = source_mode
+    result.metadata["agentic_contract"] = build_agentic_contract(
+        result,
+        analysis_profile=(analysis_profile or runtime_config.default_analysis_profile or "recorded-fast"),
+        source_mode=source_mode,
+        contract_version=runtime_config.analysis_contract_version,
+    )
+    return result
 
 
 def write_result(result: PipelineResult, result_file: Path) -> Path:

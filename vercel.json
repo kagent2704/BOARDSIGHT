@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/v1/(.*)",
+      "destination": "https://boardsight-ai-lo7o6ublra-uc.a.run.app/api/v1/$1"
+    },
+    {
+      "source": "/styles.css",
+      "destination": "/java-app/src/main/resources/public/styles.css"
+    },
+    {
+      "source": "/app.js",
+      "destination": "/java-app/src/main/resources/public/app.js"
+    },
+    {
+      "source": "/",
+      "destination": "/java-app/src/main/resources/public/index.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/java-app/src/main/resources/public/index.html"
+    }
+  ]
+}
