@@ -6,14 +6,17 @@
   <title>BoardSight</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body data-theme="light">
+<body data-theme="dark">
   <div class="app-shell">
     <aside class="brand-panel">
-      <div class="brand-mark">B</div>
-      <h1>BoardSight</h1>
-      <p class="tagline">Meeting intelligence for decisions, follow-through, and governance visibility.</p>
-      <p class="subtag">Recorded meetings, live copilot, workflow modelling, and action tracking in one calmer workspace.</p>
-      <button id="themeToggle" class="theme-toggle">Switch Theme</button>
+      <div class="brand-copy">
+        <div class="brand-mark">B</div>
+        <div>
+          <h1>BoardSight</h1>
+          <p class="tagline">Modern. Intelligent. Focused.</p>
+        </div>
+      </div>
+      <button id="themeToggle" class="theme-toggle">Toggle Theme</button>
     </aside>
 
     <main class="workspace">
@@ -53,13 +56,15 @@
         <header class="topbar panel">
           <div class="topbar-title">
             <span class="logo-chip">BoardSight</span>
-            <input id="searchInput" class="search-input" placeholder="Search meetings and decisions">
+            <input id="searchInput" class="search-input" placeholder="Search meetings, decisions, or insights...">
           </div>
           <div class="topbar-actions">
+            <button id="openLivePopupBtn" class="primary-btn">Start Live Meeting</button>
             <label class="upload-btn">
               <input type="file" id="uploadInput" accept="video/*" hidden>
               <span>Upload</span>
             </label>
+            <button class="icon-btn" type="button" aria-label="Notifications">◌</button>
             <button id="refreshBtn" class="ghost-btn">Refresh</button>
             <button id="signOutBtn" class="ghost-btn">Sign Out</button>
             <div id="topAvatar" class="avatar">JD</div>
@@ -68,15 +73,21 @@
 
         <div class="layout-grid">
           <nav class="sidebar panel">
-            <div class="nav-group">
-              <button class="nav-item active" data-view="dashboard">Dashboard</button>
-              <button class="nav-item" data-view="meetings">Meeting Library</button>
-              <button class="nav-item" data-view="analyze">Upload</button>
-              <button class="nav-item" data-view="live">Live Copilot</button>
-              <button class="nav-item" data-view="trace">Decision Trace</button>
-              <button class="nav-item" data-view="workflow">Workflow</button>
+            <div class="sidebar-brand">
+              <div class="brand-mark small">B</div>
+              <strong>BoardSight</strong>
             </div>
             <div class="nav-group">
+              <button class="nav-item active" data-view="dashboard">Dashboard</button>
+              <button class="nav-item" data-view="meetings">Meetings</button>
+              <button class="nav-item" data-view="live">Live Copilot</button>
+              <button class="nav-item" data-view="trace">Decision Intelligence</button>
+              <button class="nav-item" data-view="workflow">Workflow</button>
+              <button class="nav-item" data-view="analyze">Reports</button>
+            </div>
+            <div class="nav-group">
+              <div class="nav-label">Workspace</div>
+              <div class="workspace-chip">BoardSight Team</div>
               <button class="nav-item" data-view="admin">Settings</button>
             </div>
             <div class="user-chip">
@@ -96,42 +107,36 @@
               </div>
               <div class="hero-status">
                 <span class="status-dot"></span>
-                <span>Live analytics available</span>
+                <span>Live analytics</span>
               </div>
             </div>
 
             <div class="kpi-grid">
-              <article class="kpi-card panel"><span>Meetings Analyzed</span><strong id="kpiMeetings">--</strong><small>Populates after the first completed analysis</small></article>
-              <article class="kpi-card panel"><span>Decisions Detected</span><strong id="kpiDecisions">--</strong><small>Populates after the first completed analysis</small></article>
-              <article class="kpi-card panel"><span>Avg. Participation</span><strong id="kpiAttention">--</strong><small>Populates after the first completed analysis</small></article>
-              <article class="kpi-card panel"><span>Dominance Ratio</span><strong id="kpiDominance">--</strong><small>Populates after the first completed analysis</small></article>
+              <article class="kpi-card panel"><span>Meetings Analyzed</span><strong id="kpiMeetings">--</strong><small id="kpiMeetingsMeta">Workspace coverage</small></article>
+              <article class="kpi-card panel"><span>Decisions Detected</span><strong id="kpiDecisions">--</strong><small id="kpiDecisionsMeta">Tracked decision moments</small></article>
+              <article class="kpi-card panel"><span>Avg. Participation</span><strong id="kpiAttention">--</strong><small id="kpiAttentionMeta">Attention across the active meeting</small></article>
+              <article class="kpi-card panel"><span>Dominance Ratio</span><strong id="kpiDominance">--</strong><small id="kpiDominanceMeta">Top speaker share</small></article>
             </div>
 
             <div class="dashboard-main">
               <article class="panel chart-panel">
-                <div class="panel-title-row"><h3>Participation Balance</h3><button class="link-btn" data-view-target="meetings">View Details</button></div>
+                <div class="panel-title-row"><h3>Participation Balance</h3><button class="link-btn" data-view-target="meetings">View details</button></div>
                 <div class="donut-wrap">
                   <div id="donutChart" class="donut-chart is-empty"><span id="donutValue">--</span><small>Awaiting analysis</small></div>
                   <ul id="speakerLegend" class="legend-list empty-list"><li class="empty-state">No speaker balance data yet.</li></ul>
                 </div>
               </article>
               <article class="panel chart-panel">
-                <div class="panel-title-row"><h3>Decision Timeline</h3><button class="link-btn" data-view-target="trace">View Decisions</button></div>
+                <div class="panel-title-row"><h3>Decision Timeline</h3><button class="link-btn" data-view-target="trace">View all decisions</button></div>
                 <div id="timelineChart" class="line-chart empty-chart"><div class="empty-state">No decision timeline yet.</div></div>
               </article>
             </div>
 
             <div class="dashboard-bottom">
               <article class="panel">
-                <div class="panel-title-row"><h3>Recent Meetings</h3><button class="link-btn" data-view-target="meetings">See All</button></div>
+                <div class="panel-title-row"><h3>Recent Meetings</h3><button class="link-btn" data-view-target="meetings">View all meetings</button></div>
                 <div class="dashboard-card-body">
                   <div id="meetingList" class="meeting-list"><div class="empty-state">Processed meetings will appear here after analysis.</div></div>
-                </div>
-              </article>
-              <article class="panel">
-                <div class="panel-title-row"><h3>Workflow Snapshot</h3><button class="link-btn" data-view-target="workflow">Edit Workflow</button></div>
-                <div class="dashboard-card-body">
-                  <div id="workflowSnapshot" class="workflow-snapshot"><div class="empty-state">Workflow stages will appear after decision modelling runs.</div></div>
                 </div>
               </article>
             </div>

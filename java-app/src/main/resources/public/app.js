@@ -13,7 +13,7 @@ const state = {
   authMode: "signin",
   currentUser: DEFAULT_USER,
   authToken: localStorage.getItem("boardsight-token") || "",
-  theme: localStorage.getItem("boardsight-theme") || "light"
+  theme: localStorage.getItem("boardsight-theme") || "dark"
 };
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -432,7 +432,8 @@ function updateUserChip() {
   userInitials.textContent = initials;
   topAvatar.textContent = initials;
   const firstName = state.currentUser.displayName.split(/\s+/).filter(Boolean)[0] || "there";
-  heroGreeting.textContent = `Good Morning, ${firstName}!`;
+  heroGreeting.textContent = `${timeOfDayGreeting()}, ${firstName} 👋`;
+  document.querySelector(".hero p")?.replaceChildren("Here's what's happening in your workspace today.");
 }
 
 async function loadMeetings() {
@@ -494,6 +495,10 @@ function updateDashboard() {
   document.getElementById("kpiDecisions").textContent = totalDecisions;
   document.getElementById("kpiAttention").textContent = `${avgAttention}%`;
   document.getElementById("kpiDominance").textContent = `${dominance}%`;
+  document.getElementById("kpiMeetingsMeta").textContent = `${Math.max(1, totalMeetings)} meeting${totalMeetings === 1 ? "" : "s"} in workspace`;
+  document.getElementById("kpiDecisionsMeta").textContent = `${totalDecisions || 0} signal${totalDecisions === 1 ? "" : "s"} in active review`;
+  document.getElementById("kpiAttentionMeta").textContent = `${capitalize(overallSentiment)} engagement pattern`;
+  document.getElementById("kpiDominanceMeta").textContent = `${primarySpeaker?.speaker || "Speaker"} leading this session`;
   document.getElementById("donutValue").textContent = `${dominance}%`;
   donutChart.classList.remove("is-empty");
 
@@ -534,10 +539,13 @@ function updateDashboard() {
 
   const workflowStages = state.currentMeeting.workflow_model?.stages || [];
   const prioritizedDecisions = state.currentMeeting.workflow_model?.prioritized_decisions || [];
-  document.getElementById("workflowSnapshot").innerHTML =
-    prioritizedDecisions.length === 0 && workflowStages.length === 0
-      ? `<div class="empty-state">Workflow stages will appear after decision modelling runs.</div>`
-      : renderWorkflowSnapshot(prioritizedDecisions, workflowStages, state.currentMeeting.workflow_model?.execution_plan || []);
+  const workflowSnapshot = document.getElementById("workflowSnapshot");
+  if (workflowSnapshot) {
+    workflowSnapshot.innerHTML =
+      prioritizedDecisions.length === 0 && workflowStages.length === 0
+        ? `<div class="empty-state">Workflow stages will appear after decision modelling runs.</div>`
+        : renderWorkflowSnapshot(prioritizedDecisions, workflowStages, state.currentMeeting.workflow_model?.execution_plan || []);
+  }
 }
 
 function renderEmptyDashboard() {
@@ -545,13 +553,20 @@ function renderEmptyDashboard() {
   document.getElementById("kpiDecisions").textContent = "--";
   document.getElementById("kpiAttention").textContent = "--";
   document.getElementById("kpiDominance").textContent = "--";
+  document.getElementById("kpiMeetingsMeta").textContent = "Workspace coverage";
+  document.getElementById("kpiDecisionsMeta").textContent = "Tracked decision moments";
+  document.getElementById("kpiAttentionMeta").textContent = "Attention across the active meeting";
+  document.getElementById("kpiDominanceMeta").textContent = "Top speaker share";
   document.getElementById("donutValue").textContent = "--";
   donutChart.classList.add("is-empty");
   document.getElementById("speakerLegend").className = "legend-list empty-list";
   document.getElementById("speakerLegend").innerHTML = `<li class="empty-state">No speaker balance data yet.</li>`;
   document.getElementById("timelineChart").className = "line-chart empty-chart";
   document.getElementById("timelineChart").innerHTML = `<div class="empty-state">No decision timeline yet.</div>`;
-  document.getElementById("workflowSnapshot").innerHTML = `<div class="empty-state">Workflow stages will appear after decision modelling runs.</div>`;
+  const workflowSnapshot = document.getElementById("workflowSnapshot");
+  if (workflowSnapshot) {
+    workflowSnapshot.innerHTML = `<div class="empty-state">Workflow stages will appear after decision modelling runs.</div>`;
+  }
 }
 
 function renderMeetingList() {
@@ -578,11 +593,21 @@ function renderMeetingList() {
   visibleMeetings.forEach((item) => {
     const node = document.createElement("button");
     node.className = "meeting-item";
+    const sentiment = capitalize(item.overallSentiment || "Neutral");
+    const impact = formatMetric(item.impactScore || 0);
     node.innerHTML = `
-      <div class="meeting-date"><span>${formatDate(item.createdAt || item.created_at)}</span></div>
+      <div class="meeting-date"><span>${formatDate(item.createdAt || item.created_at).replace(" ", "<br>")}</span></div>
       <div class="meeting-meta">
         <strong>${item.title || `Meeting ${item.id}`}</strong>
         <div class="muted">${item.conclusion || "BoardSight analysis ready."}</div>
+      </div>
+      <div class="meeting-sentiment">
+        <span>Sentiment</span>
+        <strong>${sentiment}</strong>
+      </div>
+      <div class="meeting-impact">
+        <span>Impact Score</span>
+        <strong>${impact}</strong>
       </div>
       <div class="meeting-pill">${item.decisions || item.decision_count || 0} Decisions</div>
     `;
@@ -1826,6 +1851,20 @@ function capitalize(value) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function timeOfDayGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function timelineTagLabel(tone) {
+  if (tone === "risk") return "Risk";
+  if (tone === "action") return "Action";
+  if (tone === "follow-up") return "Follow-up";
+  return "Strategic";
+}
+
 function buildTranscriptPreview(meeting) {
   return (meeting.transcript?.segments || [])
     .slice(0, 5)
@@ -1835,40 +1874,50 @@ function buildTranscriptPreview(meeting) {
 
 function renderDecisionTimelineChart(container, meeting) {
   container.innerHTML = "";
-  const attentionPoints = meeting.attention_sentiment?.engagement_timeline || [];
-  const prioritizedMap = new Map(
-    (meeting.workflow_model?.prioritized_decisions || []).map((item) => [item.decision_id, item])
-  );
-  const decisions = meeting.decision_moments || [];
-  const maxTime = Math.max(
-    60,
-    ...attentionPoints.map((point) => Number(point.timestamp || 0)),
-    ...decisions.map((decision) => timestampToSeconds(decision.timestamp))
-  );
+  const prioritized = meeting.workflow_model?.prioritized_decisions || [];
+  const tasks = meeting.workflow_model?.execution_plan || [];
+  const decisions = (meeting.decision_moments || []).slice(0, 4);
+  if (decisions.length === 0) {
+    container.innerHTML = `<div class="empty-state">No decision timeline yet.</div>`;
+    return;
+  }
 
-  attentionPoints.forEach((point) => {
-    const bar = document.createElement("div");
-    bar.style.position = "absolute";
-    bar.style.left = `${8 + (Number(point.timestamp || 0) / maxTime) * 84}%`;
-    bar.style.bottom = "28px";
-    bar.style.width = "18px";
-    bar.style.height = `${Math.max(18, Number(point.attention_score || 0) * 1.45)}px`;
-    bar.style.borderRadius = "8px 8px 0 0";
-    bar.style.background = "linear-gradient(180deg, rgba(69,104,255,0.95), rgba(127,224,228,0.7))";
-    bar.title = `${point.speaker}: attention ${formatMetric(point.attention_score)}%`;
-    container.appendChild(bar);
-  });
+  const rows = decisions.map((decision, index) => {
+    const label = String(decision.label || "").toLowerCase();
+    const tone = label.includes("risk")
+      ? "risk"
+      : label.includes("action")
+        ? "action"
+        : index === decisions.length - 1
+          ? "follow-up"
+          : "strategic";
+    const title = label.includes("action")
+      ? "Action Assigned"
+      : label.includes("risk")
+        ? "Risk Flagged"
+        : index === decisions.length - 1
+          ? "Follow-up Scheduled"
+          : "Decision Made";
+    const supportingTask = tasks[index];
+    const supportingDecision = prioritized[index];
+    const detail = supportingTask?.title
+      || supportingDecision?.text
+      || decision.text
+      || "BoardSight detected a timeline event.";
+    return `
+      <div class="timeline-entry">
+        <div class="timeline-time">${decision.timestamp || "--:--"}</div>
+        <div class="timeline-dot ${tone}"></div>
+        <div class="timeline-content">
+          <strong>${title}</strong>
+          <p>${escapeHtml(shorten(detail, 92))}</p>
+        </div>
+        <span class="timeline-tag ${tone}">${timelineTagLabel(tone)}</span>
+      </div>
+    `;
+  }).join("");
 
-  decisions.forEach((decision, index) => {
-    const priority = prioritizedMap.get(decision.event_id);
-    const marker = document.createElement("div");
-    marker.className = "meeting-pill";
-    marker.style.position = "absolute";
-    marker.style.left = `${8 + (timestampToSeconds(decision.timestamp) / maxTime) * 82}%`;
-    marker.style.top = `${16 + index * 30}px`;
-    marker.textContent = priority ? `#${priority.execution_rank} ${formatMetric(priority.priority_score)}` : decision.label;
-    container.appendChild(marker);
-  });
+  container.innerHTML = rows;
 }
 
 function renderCvCountRows(counts, total) {
