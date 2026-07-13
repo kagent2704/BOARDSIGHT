@@ -156,7 +156,17 @@ loginForm.addEventListener("submit", async (event) => {
 });
 
 refreshBtn.addEventListener("click", () => loadMeetings());
-signOutBtn.addEventListener("click", () => {
+signOutBtn.addEventListener("click", async () => {
+  if (state.authToken) {
+    try {
+      await fetch("/api/v1/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${state.authToken}` }
+      });
+    } catch {
+      // Best-effort server-side logout.
+    }
+  }
   clearSession();
   authStatus.textContent = "Signed out.";
   authStatus.classList.remove("success-text");
@@ -355,7 +365,7 @@ async function registerUser() {
     return { ok: false, message: normalizeMessage(payload.detail || payload.error || "Registration failed.") };
   }
 
-  return { ok: true, message: "Account created. Sign in to access your meeting history." };
+  return { ok: true, message: "Account created. Verify your email before signing in." };
 }
 
 async function submitLogin(username, password) {

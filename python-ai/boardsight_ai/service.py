@@ -28,13 +28,30 @@ except Exception as exc:  # pragma: no cover
 from boardsight_ai.pipeline import run_pipeline, write_result
 from boardsight_ai.live_session import answer_live_copilot, build_live_session_payload
 from boardsight_ai.providers.media import clip_video_fast
-from boardsight_ai.auth import authenticate_user, create_user, get_session_user, init_auth_storage
+from boardsight_ai.auth import (
+    authenticate_credentials,
+    authenticate_user,
+    cleanup_expired_sessions,
+    cleanup_expired_verification_tokens,
+    create_user,
+    get_session_user,
+    get_user_by_email,
+    get_user_by_identifier,
+    get_user_by_username,
+    init_auth_storage,
+    issue_email_verification_token,
+    revoke_session,
+    session_ttl_seconds,
+    verify_email_token,
+)
 from boardsight_ai.agent_storage import create_agent_execution_run, get_agent_execution_run, init_agent_storage, update_agent_execution_run
 from boardsight_ai.config import default_config
+from boardsight_ai.emailer import send_verification_email
 from boardsight_ai.gitlab_execution import build_gitlab_execution_plan, normalize_gitlab_plan_source, sync_plan_to_gitlab
 from boardsight_ai.gitlab_storage import init_gitlab_storage, save_gitlab_sync
 from boardsight_ai.providers.speech import _faster_whisper_model
 from boardsight_ai.providers.vision import analyze_sparse_frame
+from boardsight_ai.retention import cleanup_expired_data
 from boardsight_ai.storage import (
     append_live_session_event,
     append_live_visual_event,
@@ -61,25 +78,52 @@ init_auth_storage(AUTH_DB_PATH)
 init_storage(MEETING_DB_PATH)
 init_agent_storage(MEETING_DB_PATH)
 init_gitlab_storage(MEETING_DB_PATH)
-create_user(
-    AUTH_DB_PATH,
-    "admin",
-    "boardsight123",
-    "admin",
-    display_name="BoardSight Admin",
-    email="admin@boardsight.local",
-)
+
+app = FastAPI(title="BoardSight AI Service", version="0.1.0")
+WARM_MODELS_ON_STARTUP = os.getenv("BOARDSIGHT_WARM_MODELS", "0").strip().lower() in {"1", "true", "yes", "on"}
+WARMUP_STATE: dict[str, object] = {
+    "enabled": WARM_MODELS_ON_STARTUP,
+    "completed": False,
+    "in_progress": False,
+    "steps": [],
+}
 
 
-def _assign_orphaned_runs_to_admin() -> None:
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _bootstrap_admin_from_env() -> None:
+    username = os.getenv("BOARDSIGHT_BOOTSTRAP_ADMIN_USERNAME", "").strip()
+    password = os.getenv("BOARDSIGHT_BOOTSTRAP_ADMIN_PASSWORD", "").strip()
+    if not username or not password:
+        return
+    email = os.getenv("BOARDSIGHT_BOOTSTRAP_ADMIN_EMAIL", f"{username}@boardsight.local").strip().lower()
+    display_name = os.getenv("BOARDSIGHT_BOOTSTRAP_ADMIN_DISPLAY_NAME", "BoardSight Admin").strip() or "BoardSight Admin"
+    create_user(
+        AUTH_DB_PATH,
+        username,
+        password,
+        "admin",
+        display_name=display_name,
+        email=email,
+        email_verified=True,
+    )
+
+
+def _assign_orphaned_runs_to_bootstrap_admin() -> None:
+    if not _env_bool("BOARDSIGHT_ASSIGN_ORPHANED_RUNS_TO_BOOTSTRAP_ADMIN", "false"):
+        return
+    username = os.getenv("BOARDSIGHT_BOOTSTRAP_ADMIN_USERNAME", "").strip()
+    if not username:
+        return
     admin_row = fetchone(
         AUTH_DB_PATH,
         "SELECT id, username FROM users WHERE LOWER(username) = LOWER(:username)",
-        {"username": "admin"},
+        {"username": username},
     )
     if admin_row is None:
         return
-
     execute(
         MEETING_DB_PATH,
         """
@@ -91,16 +135,39 @@ def _assign_orphaned_runs_to_admin() -> None:
     )
 
 
-_assign_orphaned_runs_to_admin()
+def _retention_days(name: str, default_days: int) -> int:
+    return max(1, int(os.getenv(name, str(default_days))))
 
-app = FastAPI(title="BoardSight AI Service", version="0.1.0")
-WARM_MODELS_ON_STARTUP = os.getenv("BOARDSIGHT_WARM_MODELS", "0").strip().lower() in {"1", "true", "yes", "on"}
-WARMUP_STATE: dict[str, object] = {
-    "enabled": WARM_MODELS_ON_STARTUP,
-    "completed": False,
-    "in_progress": False,
-    "steps": [],
-}
+
+def _verification_base_url(request: Request | None = None) -> str:
+    configured = os.getenv("BOARDSIGHT_PUBLIC_APP_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
+    if request is not None:
+        return str(request.base_url).rstrip("/")
+    return "http://localhost:8000"
+
+
+def _run_retention_maintenance() -> dict[str, object]:
+    meeting_cleanup = cleanup_expired_data(
+        MEETING_DB_PATH,
+        output_root=PROJECT_ROOT / "output",
+        meeting_retention_days=_retention_days("BOARDSIGHT_MEETING_RETENTION_DAYS", 30),
+        live_session_retention_days=_retention_days("BOARDSIGHT_LIVE_SESSION_RETENTION_DAYS", 14),
+        report_retention_days=_retention_days("BOARDSIGHT_REPORT_RETENTION_DAYS", 90),
+    )
+    auth_session_cleanup = cleanup_expired_sessions(AUTH_DB_PATH)
+    verification_cleanup = cleanup_expired_verification_tokens(AUTH_DB_PATH)
+    return {
+        **meeting_cleanup,
+        "deleted_auth_sessions": auth_session_cleanup,
+        "deleted_verification_tokens": verification_cleanup,
+    }
+
+
+_bootstrap_admin_from_env()
+_assign_orphaned_runs_to_bootstrap_admin()
+_run_retention_maintenance()
 
 
 def _warm_model_caches() -> None:
@@ -122,6 +189,7 @@ def _warm_model_caches() -> None:
 
 @app.on_event("startup")
 def warm_models_on_startup() -> None:
+    _run_retention_maintenance()
     if not WARM_MODELS_ON_STARTUP:
         return
 
@@ -192,6 +260,9 @@ async def login(request: Request, payload: dict | None = None) -> dict:
     password = str(request_payload.get("password", ""))
     session = authenticate_user(AUTH_DB_PATH, identifier, password)
     if session is None:
+        user, reason = authenticate_credentials(AUTH_DB_PATH, identifier, password)
+        if reason == "email_not_verified" and user is not None:
+            raise HTTPException(status_code=403, detail="Email verification is required before signing in.")
         raise HTTPException(status_code=401, detail="Invalid username, email, or password.")
     return session
 
@@ -209,10 +280,83 @@ async def register(request: Request, payload: dict | None = None) -> dict:
         raise HTTPException(status_code=400, detail="Username, email, password, and confirmation are required.")
     if confirm_password != password:
         raise HTTPException(status_code=400, detail="Password confirmation does not match.")
-    created = create_user(AUTH_DB_PATH, username, password, role, display_name=display_name, email=email)
+    created = create_user(
+        AUTH_DB_PATH,
+        username,
+        password,
+        role,
+        display_name=display_name,
+        email=email,
+        email_verified=False,
+    )
     if not created:
         raise HTTPException(status_code=409, detail="An account with that username or email already exists.")
-    return {"status": "created", "username": username, "email": email, "display_name": display_name, "role": role}
+    user = get_user_by_username(AUTH_DB_PATH, username)
+    if user is None:
+        raise HTTPException(status_code=500, detail="Unable to create account verification state.")
+    raw_token = issue_email_verification_token(AUTH_DB_PATH, int(user["user_id"]), email)
+    verification_url = f"{_verification_base_url(request)}/api/v1/auth/verify-email?token={raw_token}"
+    delivery = send_verification_email(
+        to_email=email,
+        display_name=display_name,
+        verification_url=verification_url,
+    )
+    return {
+        "status": "verification_pending",
+        "username": username,
+        "email": email,
+        "display_name": display_name,
+        "role": role,
+        "verification_sent": bool(delivery.get("sent")),
+        "email_delivery": delivery,
+    }
+
+
+@app.get("/api/v1/auth/verify-email")
+def verify_email(token: str) -> dict:
+    verified = verify_email_token(AUTH_DB_PATH, token)
+    if verified is None:
+        raise HTTPException(status_code=400, detail="Verification token is invalid or has expired.")
+    return {
+        "status": "verified",
+        "email": verified["email"],
+    }
+
+
+@app.post("/api/v1/auth/resend-verification")
+async def resend_verification(request: Request, payload: dict | None = None) -> dict:
+    request_payload = await _collect_request_payload(request, payload)
+    identifier = str(request_payload.get("identifier", "") or request_payload.get("username", "") or request_payload.get("email", "")).strip()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="Username or email is required.")
+    user = get_user_by_identifier(AUTH_DB_PATH, identifier)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    if bool(user.get("email_verified")):
+        return {"status": "already_verified", "email": user["email"]}
+    raw_token = issue_email_verification_token(AUTH_DB_PATH, int(user["id"]), str(user["email"]))
+    verification_url = f"{_verification_base_url(request)}/api/v1/auth/verify-email?token={raw_token}"
+    delivery = send_verification_email(
+        to_email=str(user["email"]),
+        display_name=str(user.get("display_name") or user.get("username") or "there"),
+        verification_url=verification_url,
+    )
+    return {
+        "status": "verification_resent",
+        "email": user["email"],
+        "verification_sent": bool(delivery.get("sent")),
+        "email_delivery": delivery,
+    }
+
+
+@app.post("/api/v1/auth/logout")
+def logout(request: Request) -> dict:
+    auth_header = request.headers.get("authorization", "")
+    token = auth_header.removeprefix("Bearer ").strip() if auth_header else ""
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authorization token.")
+    revoke_session(AUTH_DB_PATH, token)
+    return {"status": "logged_out"}
 
 
 def _require_session_user(request: Request) -> dict:
@@ -223,6 +367,13 @@ def _require_session_user(request: Request) -> dict:
     user = get_session_user(AUTH_DB_PATH, token)
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid or expired session token.")
+    return user
+
+
+def _require_admin_user(request: Request) -> dict:
+    user = _require_session_user(request)
+    if str(user.get("role") or "").strip().lower() != "admin":
+        raise HTTPException(status_code=403, detail="Admin access is required.")
     return user
 
 
@@ -259,6 +410,27 @@ def _resolve_owned_meeting_record(meeting_id: int, user: dict) -> dict:
 @app.get("/api/v1/me")
 def me(request: Request) -> dict:
     return _require_session_user(request)
+
+
+@app.get("/api/v1/privacy/settings")
+def privacy_settings() -> dict:
+    return {
+        "meeting_retention_days": _retention_days("BOARDSIGHT_MEETING_RETENTION_DAYS", 30),
+        "live_session_retention_days": _retention_days("BOARDSIGHT_LIVE_SESSION_RETENTION_DAYS", 14),
+        "report_retention_days": _retention_days("BOARDSIGHT_REPORT_RETENTION_DAYS", 90),
+        "session_ttl_seconds": session_ttl_seconds(),
+        "email_verification_required": True,
+        "email_provider_configured": bool(os.getenv("BOARDSIGHT_RESEND_API_KEY") or os.getenv("RESEND_API_KEY")),
+    }
+
+
+@app.post("/api/v1/admin/maintenance/cleanup")
+def run_retention_cleanup(request: Request) -> dict:
+    _require_admin_user(request)
+    return {
+        "status": "completed",
+        "cleanup": _run_retention_maintenance(),
+    }
 
 
 @app.get("/api/v1/meetings")
