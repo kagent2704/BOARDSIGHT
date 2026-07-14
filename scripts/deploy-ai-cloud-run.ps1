@@ -7,6 +7,7 @@ param(
     [string]$GitLabBaseUrl = "",
     [string]$GitLabProjectId = "",
     [string]$GitLabPrivateToken = "",
+    [string]$DataEncryptionSecretName = "",
     [string]$LlmProvider = "extractive",
     [string]$GeminiApiKey = "",
     [string]$GeminiModel = "gemini-3.1-flash-lite",
@@ -87,14 +88,26 @@ if ($GitLabPrivateToken) {
     $envVars += "BOARDSIGHT_GITLAB_PRIVATE_TOKEN=$GitLabPrivateToken"
 }
 
-& $gcloudCmd run deploy $ServiceName `
-    --source $sourceRoot `
-    --region $Region `
-    --project $ProjectId `
-    --port 8000 `
-    --memory $Memory `
-    --cpu $Cpu `
-    --timeout $TimeoutSeconds `
-    --max-instances $MaxInstances `
-    --set-env-vars ($envVars -join ",") `
+$secretVars = @()
+if ($DataEncryptionSecretName) {
+    $secretVars += "BOARDSIGHT_DATA_ENCRYPTION_KEY=$DataEncryptionSecretName`:latest"
+}
+
+$deployArgs = @(
+    "run", "deploy", $ServiceName,
+    "--source", $sourceRoot,
+    "--region", $Region,
+    "--project", $ProjectId,
+    "--port", "8000",
+    "--memory", $Memory,
+    "--cpu", $Cpu,
+    "--timeout", $TimeoutSeconds,
+    "--max-instances", $MaxInstances,
+    "--set-env-vars", ($envVars -join ","),
     $authFlag
+)
+if ($secretVars.Count -gt 0) {
+    $deployArgs += @("--set-secrets", ($secretVars -join ","))
+}
+
+& $gcloudCmd @deployArgs
