@@ -8,6 +8,7 @@ from typing import Any
 
 from boardsight_ai.agentic_contract import build_agentic_contract
 from boardsight_ai.config import AppConfig
+from boardsight_ai.data_protection import write_protected_json
 from boardsight_ai.features import attention_sentiment, decision_moments, decision_trace, scoring, visual_artifacts, workflow_engine
 from boardsight_ai.models import AttentionSentimentResult, SpeakerDominanceResult, TranscriptResult, TranscriptSegment, WorkflowModel
 from boardsight_ai.pipeline import _build_presentation_insights
@@ -433,8 +434,7 @@ def transcribe_live_chunk(
 def write_live_result(result: dict[str, Any], output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "live_session_result.json"
-    path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    return path
+    return write_protected_json(path, result)
 
 
 def transcript_dicts_to_segments(items: list[dict[str, Any]]) -> list[TranscriptSegment]:

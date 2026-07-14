@@ -5,7 +5,16 @@ from pathlib import Path
 
 from boardsight_ai.database import execute, table_columns
 from boardsight_ai.agentic_contract import build_agentic_contract
-from boardsight_ai.storage import create_live_session, get_meeting_result, init_storage, list_live_sessions, list_meeting_results, save_meeting_result
+from boardsight_ai.storage import (
+    create_live_session,
+    get_live_session,
+    get_meeting_result,
+    init_storage,
+    list_live_sessions,
+    list_meeting_results,
+    protect_sensitive_storage,
+    save_meeting_result,
+)
 
 
 def test_save_meeting_result_round_trips_sqlite_record(tmp_path: Path, sample_pipeline_result) -> None:
@@ -34,6 +43,77 @@ def test_save_meeting_result_round_trips_sqlite_record(tmp_path: Path, sample_pi
     assert stored is not None
     assert stored["username"] == "admin"
     assert stored["result_file"] == str(result_file)
+
+
+def test_sensitive_storage_is_encrypted_at_rest_and_decrypted_on_read(tmp_path: Path, sample_pipeline_result, monkeypatch) -> None:
+    monkeypatch.setenv("BOARDSIGHT_DATA_ENCRYPTION_KEY", "boardsight-test-encryption-key")
+    db_path = tmp_path / "meetings.db"
+    output_dir = tmp_path / "secure-run"
+    output_dir.mkdir()
+    result_file = output_dir / "boardsight_result.json"
+    result_file.write_text(json.dumps(sample_pipeline_result.to_dict()), encoding="utf-8")
+
+    meeting_id = save_meeting_result(
+        db_path,
+        sample_pipeline_result,
+        output_dir=output_dir,
+        result_file=result_file,
+        user_id=9,
+        username="secure-user",
+    )
+    session_id = create_live_session(db_path, "Protected session", user_id=9, username="secure-user")
+
+    raw_meeting = execute_and_fetch(
+        db_path,
+        "SELECT transcript_text, result_json FROM meetings WHERE id = :meeting_id",
+        {"meeting_id": meeting_id},
+    )
+    raw_session = execute_and_fetch(
+        db_path,
+        "SELECT title FROM live_sessions WHERE id = :session_id",
+        {"session_id": session_id},
+    )
+    assert raw_meeting is not None
+    assert raw_session is not None
+    assert str(raw_meeting["transcript_text"]).startswith("bsenc:v1:")
+    assert str(raw_meeting["result_json"]).startswith("bsenc:v1:")
+    assert str(raw_session["title"]).startswith("bsenc:v1:")
+
+    stored = get_meeting_result(db_path, meeting_id, user_id=9)
+    live_session = get_live_session(db_path, session_id, user_id=9)
+
+    assert stored is not None
+    assert live_session is not None
+    assert stored["transcript_text"] == sample_pipeline_result.transcript.full_text
+    assert json.loads(str(stored["result_json"]))["input_video"] == sample_pipeline_result.input_video
+    assert live_session["title"] == "Protected session"
+
+
+def test_protect_sensitive_storage_encrypts_legacy_plaintext_rows(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("BOARDSIGHT_DATA_ENCRYPTION_KEY", "boardsight-test-encryption-key")
+    db_path = tmp_path / "legacy.db"
+    init_storage(db_path)
+
+    execute(
+        db_path,
+        """
+        INSERT INTO meetings (
+            user_id, username, run_name, input_video, transcript_text,
+            result_json, speaker_count, decision_count, visual_artifact_count
+        ) VALUES (
+            1, 'legacy', 'legacy-run', 'demo.mp4', 'plain transcript',
+            '{"title":"legacy"}', 1, 1, 0
+        )
+        """,
+    )
+
+    protection = protect_sensitive_storage(db_path)
+    row = execute_and_fetch(db_path, "SELECT transcript_text, result_json FROM meetings WHERE username = 'legacy'")
+
+    assert protection["updated_rows"] >= 1
+    assert row is not None
+    assert str(row["transcript_text"]).startswith("bsenc:v1:")
+    assert str(row["result_json"]).startswith("bsenc:v1:")
 
 
 def test_build_agentic_contract_includes_actions_and_risk_signals(sample_pipeline_result) -> None:
@@ -100,3 +180,9 @@ def test_create_live_session_works_with_legacy_session_id_schema(tmp_path: Path)
     assert rows
     assert rows[0]["id"] == session_id
     assert rows[0]["title"] == "Legacy key session"
+
+
+def execute_and_fetch(db_path: Path, sql: str, params: dict | None = None):
+    from boardsight_ai.database import fetchone
+
+    return fetchone(db_path, sql, params or {})

@@ -4,8 +4,16 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+from boardsight_ai.data_protection import decrypt_json_text, decrypt_text, encrypt_text
 from boardsight_ai.database import execute, fetchall, fetchone, insert_and_return_id, is_postgres, table_columns
 from boardsight_ai.models import PipelineResult
+
+SENSITIVE_STORAGE_FIELDS: dict[str, tuple[str, ...]] = {
+    "meetings": ("transcript_text", "result_json"),
+    "live_sessions": ("transcript_text", "last_copilot_source", "last_copilot_answer"),
+    "live_session_events": ("text",),
+    "live_session_visual_events": ("textual_content", "summary", "detections_json"),
+}
 
 
 def init_storage(database_path: Path) -> None:
@@ -206,7 +214,7 @@ def save_meeting_result(
     username: str | None = None,
 ) -> int:
     init_storage(database_path)
-    payload = json.dumps(result.to_dict())
+    payload = encrypt_text(json.dumps(result.to_dict()))
     top_speaker_ratio = 0.0
     if result.speaker_dominance.speakers:
         top_speaker_ratio = float(result.speaker_dominance.speakers[0].get("dominance_ratio", 0.0))
@@ -283,7 +291,7 @@ def save_meeting_result(
             "input_video": result.input_video,
             "output_dir": str(output_dir) if output_dir is not None else None,
             "result_file": str(result_file) if result_file is not None else None,
-            "transcript_text": result.transcript.full_text,
+            "transcript_text": encrypt_text(result.transcript.full_text),
             "speaker_count": len(result.speaker_dominance.speakers),
             "decision_count": len(result.decision_moments),
             "visual_artifact_count": len(result.visual_artifacts),
@@ -354,13 +362,18 @@ def get_meeting_result(database_path: Path, meeting_id: int, user_id: int | None
     if user_id is not None:
         query += " AND user_id = :user_id"
         params["user_id"] = user_id
-    return fetchone(database_path, query, params)
+    row = fetchone(database_path, query, params)
+    if row is None:
+        return None
+    row["transcript_text"] = decrypt_text(row.get("transcript_text"))
+    row["result_json"] = decrypt_json_text(row.get("result_json"))
+    return row
 
 
 def create_live_session(database_path: Path, title: str, user_id: int | None = None, username: str | None = None) -> int:
     init_storage(database_path)
     live_session_columns = table_columns(database_path, "live_sessions")
-    params: dict[str, object] = {"user_id": user_id, "username": username, "title": title}
+    params: dict[str, object] = {"user_id": user_id, "username": username, "title": encrypt_text(title)}
     insert_columns = ["user_id", "username", "title"]
     insert_values = [":user_id", ":username", ":title"]
     if "session_id" in live_session_columns:
@@ -402,7 +415,7 @@ def append_live_session_event(
         {
             "session_id": session_id,
             "speaker": speaker,
-            "text": normalized_text,
+            "text": encrypt_text(normalized_text),
             "start_seconds": start_value,
             "end_seconds": end_value,
         },
@@ -419,7 +432,7 @@ def append_live_session_event(
         SET transcript_text = :transcript_text, updated_at = CURRENT_TIMESTAMP
         WHERE id = :session_id
         """,
-        {"transcript_text": transcript_text, "session_id": session_id},
+        {"transcript_text": encrypt_text(transcript_text), "session_id": session_id},
     )
     return event_id
 
@@ -452,7 +465,13 @@ def list_live_sessions(database_path: Path, user_id: int | None = None, status: 
     if filters:
         query += " WHERE " + " AND ".join(filters)
     query += " ORDER BY id DESC"
-    return fetchall(database_path, query, params)
+    rows = fetchall(database_path, query, params)
+    for row in rows:
+        row["title"] = decrypt_text(row.get("title"))
+        row["transcript_text"] = decrypt_text(row.get("transcript_text"))
+        row["last_copilot_source"] = decrypt_text(row.get("last_copilot_source"))
+        row["last_copilot_answer"] = decrypt_text(row.get("last_copilot_answer"))
+    return rows
 
 
 def get_live_session(database_path: Path, session_id: int, user_id: int | None = None) -> dict | None:
@@ -462,12 +481,19 @@ def get_live_session(database_path: Path, session_id: int, user_id: int | None =
     if user_id is not None:
         query += " AND user_id = :user_id"
         params["user_id"] = user_id
-    return fetchone(database_path, query, params)
+    row = fetchone(database_path, query, params)
+    if row is None:
+        return None
+    row["title"] = decrypt_text(row.get("title"))
+    row["transcript_text"] = decrypt_text(row.get("transcript_text"))
+    row["last_copilot_source"] = decrypt_text(row.get("last_copilot_source"))
+    row["last_copilot_answer"] = decrypt_text(row.get("last_copilot_answer"))
+    return row
 
 
 def get_live_session_events(database_path: Path, session_id: int) -> list[dict]:
     init_storage(database_path)
-    return fetchall(
+    rows = fetchall(
         database_path,
         """
         SELECT id, session_id, speaker, text, start_seconds, end_seconds, created_at
@@ -477,6 +503,9 @@ def get_live_session_events(database_path: Path, session_id: int) -> list[dict]:
         """,
         {"session_id": session_id},
     )
+    for row in rows:
+        row["text"] = decrypt_text(row.get("text"))
+    return rows
 
 
 def append_live_visual_event(
@@ -538,10 +567,10 @@ def append_live_visual_event(
             "screen_present": 1 if screen_present else 0,
             "chart_present": 1 if chart_present else 0,
             "document_present": 1 if document_present else 0,
-            "textual_content": str(textual_content or ""),
-            "summary": str(summary or ""),
+            "textual_content": encrypt_text(str(textual_content or "")),
+            "summary": encrypt_text(str(summary or "")),
             "confidence": float(confidence or 0.0),
-            "detections_json": json.dumps(detections or []),
+            "detections_json": encrypt_text(json.dumps(detections or [])),
             "source": str(source or ""),
         },
     )
@@ -583,7 +612,10 @@ def get_live_session_visual_events(database_path: Path, session_id: int) -> list
     items: list[dict] = []
     for row in rows:
         item = dict(row)
+        item["textual_content"] = decrypt_text(item.get("textual_content"))
+        item["summary"] = decrypt_text(item.get("summary"))
         try:
+            item["detections_json"] = decrypt_json_text(item.get("detections_json") or "[]")
             item["detections"] = json.loads(str(item.get("detections_json") or "[]"))
         except json.JSONDecodeError:
             item["detections"] = []
@@ -615,5 +647,38 @@ def save_live_copilot_reply(database_path: Path, session_id: int, answer: str, s
             updated_at = CURRENT_TIMESTAMP
         WHERE id = :session_id
         """,
-        {"answer": answer, "source": source, "session_id": session_id},
+        {"answer": encrypt_text(answer), "source": encrypt_text(source), "session_id": session_id},
     )
+
+
+def protect_sensitive_storage(database_path: Path) -> dict[str, int]:
+    init_storage(database_path)
+    updated_rows = 0
+    for table_name, columns in SENSITIVE_STORAGE_FIELDS.items():
+        existing_columns = table_columns(database_path, table_name)
+        applicable_columns = [column for column in columns if column in existing_columns]
+        if not applicable_columns:
+            continue
+        query = f"SELECT id, {', '.join(applicable_columns)} FROM {table_name}"
+        rows = fetchall(database_path, query)
+        for row in rows:
+            updates: dict[str, object] = {"id": row["id"]}
+            assignments: list[str] = []
+            changed = False
+            for column in applicable_columns:
+                original = row.get(column)
+                if original is None:
+                    continue
+                encrypted = encrypt_text(decrypt_text(original))
+                if encrypted != original:
+                    updates[column] = encrypted
+                    assignments.append(f"{column} = :{column}")
+                    changed = True
+            if changed:
+                execute(
+                    database_path,
+                    f"UPDATE {table_name} SET {', '.join(assignments)} WHERE id = :id",
+                    updates,
+                )
+                updated_rows += 1
+    return {"updated_rows": updated_rows}

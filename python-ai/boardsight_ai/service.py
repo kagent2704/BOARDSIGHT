@@ -45,11 +45,18 @@ from boardsight_ai.auth import (
     upsert_admin_user,
     verify_email_token,
 )
-from boardsight_ai.agent_storage import create_agent_execution_run, get_agent_execution_run, init_agent_storage, update_agent_execution_run
+from boardsight_ai.agent_storage import (
+    create_agent_execution_run,
+    get_agent_execution_run,
+    init_agent_storage,
+    protect_agent_storage,
+    update_agent_execution_run,
+)
 from boardsight_ai.config import _load_local_env, default_config
+from boardsight_ai.data_protection import data_encryption_enabled, data_encryption_key_fingerprint
 from boardsight_ai.emailer import send_verification_email
 from boardsight_ai.gitlab_execution import build_gitlab_execution_plan, normalize_gitlab_plan_source, sync_plan_to_gitlab
-from boardsight_ai.gitlab_storage import init_gitlab_storage, save_gitlab_sync
+from boardsight_ai.gitlab_storage import init_gitlab_storage, protect_gitlab_storage, save_gitlab_sync
 from boardsight_ai.providers.speech import _faster_whisper_model
 from boardsight_ai.providers.vision import analyze_sparse_frame
 from boardsight_ai.retention import cleanup_expired_data
@@ -67,6 +74,7 @@ from boardsight_ai.storage import (
     init_storage,
     list_live_sessions,
     list_meeting_results,
+    protect_sensitive_storage,
     save_live_copilot_reply,
     save_meeting_result,
 )
@@ -209,9 +217,31 @@ def _run_retention_maintenance() -> dict[str, object]:
     }
 
 
+def _run_data_protection_maintenance() -> dict[str, object]:
+    if not data_encryption_enabled():
+        return {
+            "enabled": False,
+            "meeting_storage_updated_rows": 0,
+            "gitlab_storage_updated_rows": 0,
+            "agent_storage_updated_rows": 0,
+            "key_fingerprint": "",
+        }
+    meeting_protection = protect_sensitive_storage(MEETING_DB_PATH)
+    gitlab_protection = protect_gitlab_storage(MEETING_DB_PATH)
+    agent_protection = protect_agent_storage(MEETING_DB_PATH)
+    return {
+        "enabled": True,
+        "meeting_storage_updated_rows": int(meeting_protection.get("updated_rows", 0)),
+        "gitlab_storage_updated_rows": int(gitlab_protection.get("updated_rows", 0)),
+        "agent_storage_updated_rows": int(agent_protection.get("updated_rows", 0)),
+        "key_fingerprint": data_encryption_key_fingerprint(),
+    }
+
+
 _bootstrap_admin_from_env()
 _assign_orphaned_runs_to_bootstrap_admin()
 _migrate_legacy_admin_runs_to_bootstrap_admin()
+_run_data_protection_maintenance()
 _run_retention_maintenance()
 
 
@@ -466,6 +496,9 @@ def privacy_settings() -> dict:
         "session_ttl_seconds": session_ttl_seconds(),
         "email_verification_required": True,
         "email_provider_configured": bool(os.getenv("BOARDSIGHT_RESEND_API_KEY") or os.getenv("RESEND_API_KEY")),
+        "data_encryption_enabled": data_encryption_enabled(),
+        "data_encryption_key_fingerprint": data_encryption_key_fingerprint(),
+        "operator_blindness_mode": "application-layer-encryption",
     }
 
 
@@ -475,6 +508,7 @@ def run_retention_cleanup(request: Request) -> dict:
     return {
         "status": "completed",
         "cleanup": _run_retention_maintenance(),
+        "protection": _run_data_protection_maintenance(),
     }
 
 

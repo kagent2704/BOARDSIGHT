@@ -6,6 +6,7 @@ from typing import Any
 
 from boardsight_ai.agentic_contract import build_agentic_contract
 from boardsight_ai.config import AppConfig, default_config, resolve_runtime_config
+from boardsight_ai.data_protection import write_protected_json
 from boardsight_ai.evaluation import write_evaluation
 from boardsight_ai.lightweight_pipeline import run_lightweight_pipeline
 from boardsight_ai.models import PipelineResult
@@ -54,5 +55,4 @@ def write_result(result: PipelineResult, result_file: Path) -> Path:
     payload.setdefault("metadata", {})
     payload["metadata"]["report_files"] = report_files
     payload["metadata"]["performance_report_file"] = str(performance_report_path)
-    result_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    return result_file
+    return write_protected_json(result_file, payload)
