@@ -37,6 +37,8 @@ const authSubtitle = document.getElementById("authSubtitle");
 const authSubmit = document.getElementById("authSubmit");
 const authPrompt = document.getElementById("authPrompt");
 const authModeToggle = document.getElementById("authModeToggle");
+const authVerificationActions = document.getElementById("authVerificationActions");
+const resendVerificationBtn = document.getElementById("resendVerificationBtn");
 const authStatus = document.getElementById("authStatus");
 const nameField = document.getElementById("nameField");
 const usernameField = document.getElementById("usernameField");
@@ -110,6 +112,7 @@ let liveScreenStream = null;
 let liveScreenCaptureHandle = null;
 let liveScreenVideo = null;
 let liveScreenCanvas = null;
+let authRequestInFlight = false;
 
 themeToggle.addEventListener("click", () => {
   state.theme = state.theme === "light" ? "dark" : "light";
@@ -119,8 +122,20 @@ themeToggle.addEventListener("click", () => {
 
 authModeToggle.addEventListener("click", () => {
   state.authMode = state.authMode === "signin" ? "signup" : "signin";
-  authStatus.textContent = "";
+  clearAuthFeedback();
   syncAuthMode();
+});
+
+resendVerificationBtn?.addEventListener("click", async () => {
+  if (authRequestInFlight) {
+    return;
+  }
+  const identifier = resolveVerificationIdentifier();
+  if (!identifier) {
+    setAuthFeedback("Enter your username or email first so we know where to resend the verification link.");
+    return;
+  }
+  await resendVerification(identifier);
 });
 
 guestLogin.addEventListener("click", async () => {
@@ -135,25 +150,107 @@ loginForm.addEventListener("submit", async (event) => {
   const username = usernameInput.value.trim();
   const password = passwordInput.value;
   if (!username || !password) {
-    authStatus.textContent = "Username or email and password are required.";
-    authStatus.classList.remove("success-text");
+    setAuthFeedback("Username or email and password are required.");
     return;
   }
+
+  clearAuthFeedback();
 
   if (state.authMode === "signup") {
-    const result = await registerUser();
-    authStatus.textContent = result.message;
-    authStatus.classList.toggle("success-text", result.ok);
-    if (result.ok) {
-      state.authMode = "signin";
-      passwordInput.value = "";
-      syncAuthMode();
-    }
+    await withAuthPending(async () => {
+      const result = await registerUser();
+      setAuthFeedback(result.message, { success: result.ok });
+      if (result.ok) {
+        state.authMode = "signin";
+        passwordInput.value = "";
+        confirmPasswordInput.value = "";
+        syncAuthMode();
+      } else if (result.requiresVerification) {
+        syncAuthMode();
+      }
+    }, state.authMode === "signup" ? "Creating account..." : "Working...");
     return;
   }
 
-  await submitLogin(username, password);
+  await withAuthPending(async () => {
+    await submitLogin(username, password);
+  }, "Signing in...");
 });
+
+function clearAuthFeedback() {
+  authStatus.textContent = "";
+  authStatus.classList.remove("success-text", "error-text");
+}
+
+function setAuthFeedback(message, { success = false } = {}) {
+  authStatus.textContent = message;
+  authStatus.classList.toggle("success-text", Boolean(success));
+  authStatus.classList.toggle("error-text", Boolean(message) && !success);
+}
+
+function resolveVerificationIdentifier() {
+  return (usernameInput.value.trim() || emailInput.value.trim().toLowerCase());
+}
+
+function setAuthBusy(active, busyLabel = "Working...") {
+  authRequestInFlight = active;
+  authSubmit.disabled = active;
+  guestLogin.disabled = active;
+  authModeToggle.disabled = active;
+  resendVerificationBtn.disabled = active;
+  usernameInput.disabled = active;
+  passwordInput.disabled = active;
+  displayNameInput.disabled = active;
+  emailInput.disabled = active;
+  confirmPasswordInput.disabled = active;
+  roleInput.disabled = active;
+  if (active) {
+    authSubmit.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>${busyLabel}</span>`;
+  } else {
+    guestLogin.textContent = "Continue as Demo";
+    syncAuthMode();
+  }
+}
+
+async function withAuthPending(task, busyLabel) {
+  if (authRequestInFlight) {
+    return;
+  }
+  setAuthBusy(true, busyLabel);
+  try {
+    await task();
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function resendVerification(identifier) {
+  await withAuthPending(async () => {
+    const response = await fetch("/api/v1/auth/resend-verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier })
+    });
+
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    if (!response.ok) {
+      setAuthFeedback(normalizeMessage(payload.detail || payload.error || "Could not resend verification email."));
+      return;
+    }
+    const sent = Boolean(payload.verification_sent);
+    setAuthFeedback(
+      sent
+        ? "Verification email sent. Check your inbox and spam folder."
+        : "The account exists, but the verification email could not be sent right now.",
+      { success: sent }
+    );
+  }, "Sending email...");
+}
 
 refreshBtn.addEventListener("click", () => loadMeetings());
 signOutBtn.addEventListener("click", async () => {
@@ -302,6 +399,7 @@ function syncAuthMode() {
   nameField.classList.toggle("hidden", signingIn);
   emailField.classList.toggle("hidden", signingIn);
   confirmPasswordField.classList.toggle("hidden", signingIn);
+  authVerificationActions?.classList.toggle("hidden", !signingIn);
   setLabelText(usernameField, signingIn ? "Username or Email" : "Username");
 }
 
@@ -320,14 +418,6 @@ async function registerUser() {
     return { ok: false, message: "Password and confirm password must match." };
   }
 
-  const query = new URLSearchParams({
-    username,
-    email,
-    password,
-    confirm_password: confirmPassword,
-    display_name: displayName,
-    role
-  });
   const response = await fetch("/api/v1/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -341,28 +431,25 @@ async function registerUser() {
     })
   });
 
-  const queryResponse = response.ok ? response : await fetch(`/api/v1/auth/register?${query.toString()}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username,
-      email,
-      password,
-      confirm_password: confirmPassword,
-      display_name: displayName,
-      role
-    })
-  });
-
   let payload = {};
   try {
-    payload = await queryResponse.json();
+    payload = await response.json();
   } catch {
     payload = {};
   }
 
-  if (!queryResponse.ok) {
+  if (!response.ok) {
     return { ok: false, message: normalizeMessage(payload.detail || payload.error || "Registration failed.") };
+  }
+
+  if (payload.status === "verification_pending") {
+    return {
+      ok: true,
+      requiresVerification: true,
+      message: payload.verification_sent
+        ? "Account created. Check your email and verify before signing in."
+        : "Account created, but we could not send the verification email yet. Use resend verification below."
+    };
   }
 
   return { ok: true, message: "Account created. Verify your email before signing in." };
@@ -375,25 +462,19 @@ async function submitLogin(username, password) {
     body: JSON.stringify({ identifier: username, password })
   });
 
-  const queryResponse = response.ok ? response : await fetch(
-    `/api/v1/auth/login?identifier=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifier: username, password })
-    }
-  );
-
   let payload = {};
   try {
-    payload = await queryResponse.json();
+    payload = await response.json();
   } catch {
     payload = {};
   }
 
-  if (!queryResponse.ok) {
-    authStatus.textContent = normalizeMessage(payload.detail || payload.error || "Invalid username or password.");
-    authStatus.classList.remove("success-text");
+  if (!response.ok) {
+    const message = normalizeMessage(payload.detail || payload.error || "Invalid username or password.");
+    setAuthFeedback(message);
+    if (/verify/i.test(message)) {
+      authVerificationActions?.classList.remove("hidden");
+    }
     return;
   }
 
@@ -401,7 +482,7 @@ async function submitLogin(username, password) {
   localStorage.setItem("boardsight-token", state.authToken);
   state.currentUser = normalizeUser(payload);
   updateUserChip();
-  authStatus.textContent = "";
+  clearAuthFeedback();
   loginView.classList.add("hidden");
   appView.classList.remove("hidden");
   if (isLiveCopilotPopup) {
