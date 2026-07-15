@@ -370,6 +370,32 @@ def get_meeting_result(database_path: Path, meeting_id: int, user_id: int | None
     return row
 
 
+def update_meeting_workflow_editor(
+    database_path: Path,
+    meeting_id: int,
+    workflow_editor: dict,
+    user_id: int | None = None,
+) -> dict | None:
+    record = get_meeting_result(database_path, meeting_id, user_id=user_id)
+    if record is None:
+        return None
+    payload = json.loads(str(record.get("result_json") or "{}"))
+    payload["workflow_editor"] = workflow_editor
+    execute(
+        database_path,
+        """
+        UPDATE meetings
+        SET result_json = :result_json
+        WHERE id = :meeting_id
+        """,
+        {
+            "meeting_id": meeting_id,
+            "result_json": encrypt_text(json.dumps(payload)),
+        },
+    )
+    return get_meeting_result(database_path, meeting_id, user_id=user_id)
+
+
 def create_live_session(database_path: Path, title: str, user_id: int | None = None, username: str | None = None) -> int:
     init_storage(database_path)
     live_session_columns = table_columns(database_path, "live_sessions")

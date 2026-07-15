@@ -78,6 +78,7 @@ from boardsight_ai.storage import (
     protect_sensitive_storage,
     save_live_copilot_reply,
     save_meeting_result,
+    update_meeting_workflow_editor,
 )
 from boardsight_ai.reporting import write_structured_reports
 from boardsight_ai.models import pipeline_result_from_dict
@@ -485,6 +486,76 @@ def _resolve_owned_meeting_record(meeting_id: int, user: dict) -> dict:
     return record
 
 
+def _sanitize_workflow_editor_payload(payload: dict) -> dict:
+    workflow_editor = dict(payload.get("workflow_editor") or payload.get("workflowEditor") or payload)
+    nodes = workflow_editor.get("nodes") or []
+    links = workflow_editor.get("links") or []
+    meta = workflow_editor.get("meta") or {}
+    title = str(workflow_editor.get("title") or "BoardSight Workflow").strip() or "BoardSight Workflow"
+    meeting_id = str(workflow_editor.get("meetingId") or payload.get("meeting_id") or "").strip()
+
+    sanitized_nodes: list[dict[str, object]] = []
+    for index, raw_node in enumerate(nodes):
+        if not isinstance(raw_node, dict):
+            continue
+        node_id = str(raw_node.get("id") or f"node-{index + 1}").strip() or f"node-{index + 1}"
+        node_type = str(raw_node.get("type") or "review").strip().lower() or "review"
+        sanitized_nodes.append(
+            {
+                "id": node_id,
+                "type": node_type,
+                "title": str(raw_node.get("title") or "").strip(),
+                "owner": str(raw_node.get("owner") or "").strip(),
+                "status": str(raw_node.get("status") or "").strip(),
+                "summary": str(raw_node.get("summary") or "").strip(),
+                "description": str(raw_node.get("description") or raw_node.get("detailedDescription") or "").strip(),
+                "notes": str(raw_node.get("notes") or "").strip(),
+                "handoffNotes": str(raw_node.get("handoffNotes") or "").strip(),
+                "acceptanceCriteria": str(raw_node.get("acceptanceCriteria") or "").strip(),
+                "decisionId": str(raw_node.get("decisionId") or "").strip(),
+                "sourceStage": str(raw_node.get("sourceStage") or raw_node.get("stage") or "").strip(),
+                "dueDate": str(raw_node.get("dueDate") or "").strip(),
+                "priority": str(raw_node.get("priority") or "Medium").strip() or "Medium",
+            }
+        )
+
+    if not sanitized_nodes:
+        raise HTTPException(status_code=400, detail="Workflow must include at least one node.")
+
+    valid_node_ids = {str(node["id"]) for node in sanitized_nodes}
+    sanitized_links: list[dict[str, str]] = []
+    for raw_link in links:
+        if not isinstance(raw_link, dict):
+            continue
+        from_id = str(raw_link.get("from") or "").strip()
+        to_id = str(raw_link.get("to") or "").strip()
+        if not from_id or not to_id or from_id not in valid_node_ids or to_id not in valid_node_ids:
+            continue
+        sanitized_links.append(
+            {
+                "from": from_id,
+                "to": to_id,
+                "label": str(raw_link.get("label") or "next").strip() or "next",
+            }
+        )
+
+    sanitized_meta = {
+        "derivedFrom": str(meta.get("derivedFrom") or "BoardSight workflow editor").strip() or "BoardSight workflow editor",
+        "status": str(meta.get("status") or "saved").strip() or "saved",
+        "overview": str(meta.get("overview") or "").strip(),
+        "notes": str(meta.get("notes") or "").strip(),
+        "savedAt": str(meta.get("savedAt") or datetime.utcnow().isoformat()).strip(),
+    }
+
+    return {
+        "meetingId": meeting_id,
+        "title": title,
+        "nodes": sanitized_nodes,
+        "links": sanitized_links,
+        "meta": sanitized_meta,
+    }
+
+
 @app.get("/api/v1/me")
 def me(request: Request) -> dict:
     return _require_session_user(request)
@@ -535,6 +606,35 @@ def meeting_detail(meeting_id: int, request: Request) -> dict:
         "username": str(record.get("username") or ""),
     }
     return payload
+
+
+@app.put("/api/v1/meetings/{meeting_id}/workflow")
+async def update_meeting_workflow(meeting_id: int, request: Request, payload: dict | None = None) -> dict:
+    user = _require_session_user(request)
+    request_payload = await _collect_request_payload(request, payload)
+    workflow_editor = _sanitize_workflow_editor_payload(request_payload)
+    workflow_editor["meetingId"] = str(meeting_id)
+    updated_record = update_meeting_workflow_editor(
+        MEETING_DB_PATH,
+        meeting_id,
+        workflow_editor,
+        user_id=int(user["user_id"]),
+    )
+    if updated_record is None:
+        raise HTTPException(status_code=404, detail="Stored analysis not found.")
+    updated_payload = json.loads(str(updated_record.get("result_json") or "{}"))
+    updated_payload["storage"] = {
+        "meeting_id": int(updated_record["id"]),
+        "output_dir": str(updated_record.get("output_dir") or ""),
+        "result_file": str(updated_record.get("result_file") or ""),
+        "created_at": str(updated_record.get("created_at") or ""),
+        "username": str(updated_record.get("username") or ""),
+    }
+    return {
+        "status": "saved",
+        "workflow_editor": workflow_editor,
+        "meeting": updated_payload,
+    }
 
 
 @app.post("/api/v1/meetings/{meeting_id}/gitlab/preview")

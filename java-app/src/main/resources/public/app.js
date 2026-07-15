@@ -607,6 +607,44 @@ async function loadMeetingDetail(meetingId) {
   renderWorkflow();
 }
 
+function normalizeWorkflowDraft(rawDraft, meetingId) {
+  const draft = rawDraft && typeof rawDraft === "object" ? rawDraft : {};
+  const nodes = Array.isArray(draft.nodes) ? draft.nodes : [];
+  const links = Array.isArray(draft.links) ? draft.links : [];
+  return {
+    meetingId: String(draft.meetingId || meetingId || "workspace"),
+    title: String(draft.title || `${prettifyMeetingId(meetingId)} Workflow Draft`),
+    nodes: nodes.map((node, index) => ({
+      id: String(node?.id || `node-${index + 1}`),
+      type: String(node?.type || "review"),
+      title: String(node?.title || ""),
+      owner: String(node?.owner || ""),
+      status: String(node?.status || ""),
+      summary: String(node?.summary || ""),
+      description: String(node?.description || node?.detailedDescription || ""),
+      notes: String(node?.notes || ""),
+      handoffNotes: String(node?.handoffNotes || ""),
+      acceptanceCriteria: String(node?.acceptanceCriteria || ""),
+      decisionId: String(node?.decisionId || ""),
+      sourceStage: String(node?.sourceStage || ""),
+      dueDate: String(node?.dueDate || ""),
+      priority: String(node?.priority || "Medium")
+    })),
+    links: links.map((link) => ({
+      from: String(link?.from || ""),
+      to: String(link?.to || ""),
+      label: String(link?.label || "next")
+    })).filter((link) => link.from && link.to),
+    meta: {
+      derivedFrom: String(draft.meta?.derivedFrom || "BoardSight workflow editor"),
+      status: String(draft.meta?.status || "draft"),
+      overview: String(draft.meta?.overview || ""),
+      notes: String(draft.meta?.notes || ""),
+      savedAt: String(draft.meta?.savedAt || "")
+    }
+  };
+}
+
 function updateDashboard() {
   if (!state.sessionHasProcessed || !state.currentMeeting) {
     renderEmptyDashboard();
@@ -1430,10 +1468,14 @@ function workflowStorageKey(meetingId) {
 function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
   const meetingId = meeting?.storage?.meeting_id || state.currentMeetingId || "workspace";
   if (!forceReset) {
+    const remoteDraft = meeting?.workflow_editor;
+    if (remoteDraft?.nodes?.length) {
+      return normalizeWorkflowDraft(remoteDraft, meetingId);
+    }
     const saved = localStorage.getItem(workflowStorageKey(meetingId));
     if (saved) {
       try {
-        return JSON.parse(saved);
+        return normalizeWorkflowDraft(JSON.parse(saved), meetingId);
       } catch (error) {
       }
     }
@@ -1454,7 +1496,10 @@ function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
     owner: meeting?.metadata?.source_mode === "live" ? "Live session" : "Recorded upload",
     status: "Ready",
     summary: "BoardSight ingests transcript, speaker, and visual context before workflow routing.",
+    description: "This entry step captures the incoming meeting context, analysis mode, and source signals before the workflow is modeled.",
     notes: buildMeetingSubtitle(meeting),
+    handoffNotes: "Confirm the right meeting, source mode, and transcript coverage before downstream editing.",
+    acceptanceCriteria: "Meeting is loaded and core transcript, decision, and artifact signals are available.",
     decisionId: "",
     sourceStage: "start",
     dueDate: "",
@@ -1470,7 +1515,10 @@ function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
         owner: stage.speaker || tasks[index]?.owner || "Meeting owner",
         status: "Observed",
         summary: stage.summary || "Workflow stage inferred from the meeting timeline.",
+        description: `BoardSight inferred this stage from discussion flow and execution signals around ${stage.stage || stage.name || `Stage ${index + 1}`}.`,
         notes: `Confidence ${formatMetric(stage.confidence || 0)} | Source ${stage.source || "workflow inference"}`,
+        handoffNotes: "Validate whether this inferred stage reflects the real operating process.",
+        acceptanceCriteria: "Stage label, owner, and downstream consequence are specific enough to act on.",
         decisionId: "",
         sourceStage: stage.stage || stage.name || "",
         dueDate: "",
@@ -1489,7 +1537,10 @@ function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
       owner: linkedTask?.owner || decision.speaker || linkedMoment?.speaker || "Unassigned",
       status: bottlenecks.length > 0 && index === 0 ? "Blocked" : "Ready",
       summary: linkedMoment?.text || decision.text || "Decision captured from the meeting.",
+      description: "This node represents a concrete decision or approval checkpoint that should drive downstream execution ownership.",
       notes: `Priority ${formatMetric(decision.priority_score || 0)} | ${renderWorkflowReasoning(decision.reasoning || [])}`,
+      handoffNotes: "Ensure the exact decision text, owner, and urgency are explicit before finalizing.",
+      acceptanceCriteria: "Decision is unambiguous, traceable to meeting evidence, and linked to next action.",
       decisionId: decision.decision_id || "",
       sourceStage: "decision",
       dueDate: inferDueDate(`${linkedTask?.title || ""} ${linkedTask?.notes || ""}`),
@@ -1503,7 +1554,10 @@ function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
         owner: linkedTask.owner || "Unassigned",
         status: /\b(block|depend|waiting|pending)\b/i.test(String(linkedTask.notes || "")) ? "Blocked" : "Planned",
         summary: linkedTask.notes || "Execution task derived from the workflow model.",
+        description: "This node converts the captured decision into an operational follow-through step with an owner and sequencing.",
         notes: `Task type ${linkedTask.task_type || "workflow"} | Order ${linkedTask.execution_order || index + 1}`,
+        handoffNotes: "Clarify dependencies, timing, and external tooling before handing off execution.",
+        acceptanceCriteria: "Task has an owner, expected outcome, and enough detail for direct follow-through.",
         decisionId: linkedTask.decision_id || "",
         sourceStage: "execution",
         dueDate: inferDueDate(`${linkedTask.title || ""} ${linkedTask.notes || ""}`),
@@ -1520,7 +1574,10 @@ function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
       owner: "PMO / Governance lead",
       status: "Attention needed",
       summary: bottlenecks.join(" | "),
+      description: "BoardSight identified workflow blockers that can stall execution or leave responsibility unresolved.",
       notes: "Workflow bottlenecks were detected and should be resolved before closure.",
+      handoffNotes: "Escalate unresolved blockers, ownership gaps, and missing deadlines to the right approver.",
+      acceptanceCriteria: "Every blocker has a named resolver, next checkpoint, or explicit close decision.",
       decisionId: "",
       sourceStage: "escalation",
       dueDate: "",
@@ -1535,7 +1592,10 @@ function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
     owner: "BoardSight",
     status: "Pending",
     summary: "Finalize the meeting workflow after owners, blockers, and next steps are validated.",
+    description: "This closing node confirms that the workflow is reviewable, assigned, and ready for follow-through after the meeting.",
     notes: "Use Save to persist this draft in the workspace browser.",
+    handoffNotes: "Share the finalized workflow with the operating team and update any linked systems.",
+    acceptanceCriteria: "Owners, notes, blockers, and next actions are complete enough to export or operationalize.",
     decisionId: "",
     sourceStage: "end",
     dueDate: "",
@@ -1558,7 +1618,11 @@ function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
     links,
     meta: {
       derivedFrom: workflowModel?.workflow_summary?.source || "BoardSight workflow draft",
-      status: workflowModel?.workflow_summary?.status || (dedupedNodes.length > 2 ? "generated" : "draft")
+      status: workflowModel?.workflow_summary?.status || (dedupedNodes.length > 2 ? "generated" : "draft"),
+      overview: workflowModel?.workflow_summary?.top_priority_decision
+        ? `Top workflow signal: ${workflowModel.workflow_summary.top_priority_decision}`
+        : "",
+      notes: bottlenecks.slice(0, 3).join(" | ")
     }
   };
 }
@@ -1572,6 +1636,12 @@ function renderWorkflowPropertiesPanel(node, draft) {
   const linkedCount = draft.links.filter((link) => link.from === node.id || link.to === node.id).length;
   return `
     <div class="workflow-property-form">
+      <label>Workflow Overview
+        <textarea rows="3" data-workflow-meta-field="overview">${escapeHtml(draft.meta?.overview || "")}</textarea>
+      </label>
+      <label>Workflow Notes
+        <textarea rows="4" data-workflow-meta-field="notes">${escapeHtml(draft.meta?.notes || "")}</textarea>
+      </label>
       <div class="speaker-row"><span>Node Type</span><strong>${escapeHtml(capitalize(node.type))}</strong></div>
       <div class="speaker-row"><span>Linked edges</span><strong>${linkedCount}</strong></div>
       <label>Title
@@ -1594,14 +1664,23 @@ function renderWorkflowPropertiesPanel(node, draft) {
       <label>Summary
         <textarea rows="4" data-workflow-field="summary">${escapeHtml(node.summary || "")}</textarea>
       </label>
+      <label>Detailed Description
+        <textarea rows="6" data-workflow-field="description">${escapeHtml(node.description || "")}</textarea>
+      </label>
       <label>Notes
         <textarea rows="5" data-workflow-field="notes">${escapeHtml(node.notes || "")}</textarea>
+      </label>
+      <label>Handoff Notes
+        <textarea rows="4" data-workflow-field="handoffNotes">${escapeHtml(node.handoffNotes || "")}</textarea>
+      </label>
+      <label>Acceptance Criteria
+        <textarea rows="4" data-workflow-field="acceptanceCriteria">${escapeHtml(node.acceptanceCriteria || "")}</textarea>
       </label>
       <div class="button-row">
         <button type="button" class="ghost-btn" id="workflowDuplicateBtn">Duplicate</button>
         <button type="button" class="ghost-btn" id="workflowDeleteBtn">Delete</button>
       </div>
-      <div class="upload-status" id="workflowStatus">Changes stay editable locally until you save this workflow draft.</div>
+      <div class="upload-status" id="workflowStatus">Save writes this workflow to BoardSight so it stays available across devices and sessions.</div>
     </div>
   `;
 }
@@ -1614,6 +1693,11 @@ function bindWorkflowPropertyInputs() {
   workflowProperties.querySelectorAll("[data-workflow-field]").forEach((input) => {
     input.addEventListener("input", () => {
       updateWorkflowNodeField(input.dataset.workflowField, input.value);
+    });
+  });
+  workflowProperties.querySelectorAll("[data-workflow-meta-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      updateWorkflowMetaField(input.dataset.workflowMetaField, input.value);
     });
   });
   document.getElementById("workflowDuplicateBtn")?.addEventListener("click", duplicateWorkflowNode);
@@ -1632,6 +1716,15 @@ function updateWorkflowNodeField(field, value) {
   renderWorkflow();
 }
 
+function updateWorkflowMetaField(field, value) {
+  if (!state.workflowDraft) {
+    return;
+  }
+  state.workflowDraft.meta = state.workflowDraft.meta || {};
+  state.workflowDraft.meta[field] = value;
+  renderWorkflow();
+}
+
 function addWorkflowNode(type) {
   if (!state.currentMeeting) {
     return;
@@ -1645,7 +1738,10 @@ function addWorkflowNode(type) {
     owner: "Unassigned",
     status: "Draft",
     summary: "Describe what should happen at this workflow step.",
+    description: "Capture the full routing context, approvals, deliverables, and decision logic for this step.",
     notes: "Add detailed routing, approval, or execution guidance here.",
+    handoffNotes: "",
+    acceptanceCriteria: "",
     decisionId: "",
     sourceStage: "manual",
     dueDate: "",
@@ -1704,22 +1800,51 @@ function rebuildWorkflowLinks() {
   }));
 }
 
-function saveWorkflowDraft() {
+async function saveWorkflowDraft() {
   if (!state.workflowDraft) {
     return;
   }
   const key = workflowStorageKey(state.workflowDraft.meetingId || state.currentMeetingId);
   state.workflowDraft.meta = {
     ...state.workflowDraft.meta,
-    status: "saved-local",
+    status: "saving",
     savedAt: new Date().toISOString()
   };
   localStorage.setItem(key, JSON.stringify(state.workflowDraft));
   const workflowStatus = document.getElementById("workflowStatus");
   if (workflowStatus) {
-    workflowStatus.textContent = "Workflow draft saved in this workspace browser for continued editing.";
+    workflowStatus.textContent = "Saving workflow to BoardSight...";
   }
   renderWorkflow();
+  try {
+    const response = await apiFetch(`/api/v1/meetings/${encodeURIComponent(state.currentMeeting.storage?.meeting_id || state.currentMeetingId)}/workflow`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workflow_editor: state.workflowDraft })
+    });
+    if (!response.ok) {
+      throw new Error("Workflow save failed.");
+    }
+    const payload = await response.json();
+    state.currentMeeting = payload.meeting || state.currentMeeting;
+    state.workflowDraft = normalizeWorkflowDraft(payload.workflow_editor || state.workflowDraft, state.currentMeetingId);
+    state.selectedWorkflowNodeId = state.workflowDraft.nodes.find((node) => node.id === state.selectedWorkflowNodeId)?.id || state.workflowDraft.nodes[0]?.id || null;
+    localStorage.setItem(key, JSON.stringify(state.workflowDraft));
+    renderWorkflow();
+    const refreshedStatus = document.getElementById("workflowStatus");
+    if (refreshedStatus) {
+      refreshedStatus.textContent = "Workflow saved to BoardSight and synced for future sessions.";
+    }
+  } catch (error) {
+    console.error(error);
+    state.workflowDraft.meta.status = "saved-local";
+    localStorage.setItem(key, JSON.stringify(state.workflowDraft));
+    renderWorkflow();
+    const failureStatus = document.getElementById("workflowStatus");
+    if (failureStatus) {
+      failureStatus.textContent = "BoardSight save failed, so this draft is only stored in this browser right now.";
+    }
+  }
 }
 
 async function loadActiveLiveSession() {
