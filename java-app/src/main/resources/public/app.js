@@ -8,6 +8,8 @@ const state = {
   meetings: [],
   currentMeetingId: null,
   currentMeeting: null,
+  workflowDraft: null,
+  selectedWorkflowNodeId: null,
   liveSession: null,
   sessionHasProcessed: false,
   authMode: "signin",
@@ -102,6 +104,9 @@ const meetingGitlabPreviewBtn = document.getElementById("meetingGitlabPreviewBtn
 const meetingGitlabSyncBtn = document.getElementById("meetingGitlabSyncBtn");
 const meetingGitlabStatus = document.getElementById("meetingGitlabStatus");
 const meetingGitlabResult = document.getElementById("meetingGitlabResult");
+const workflowNewBtn = document.getElementById("workflowNewBtn");
+const workflowSaveBtn = document.getElementById("workflowSaveBtn");
+const workflowComponentButtons = Array.from(document.querySelectorAll(".workflow-component-btn"));
 const floatingLiveLauncher = document.getElementById("floatingLiveLauncher");
 
 let liveRefreshHandle = null;
@@ -175,6 +180,22 @@ loginForm.addEventListener("submit", async (event) => {
   await withAuthPending(async () => {
     await submitLogin(username, password);
   }, "Signing in...");
+});
+
+workflowNewBtn?.addEventListener("click", () => {
+  state.workflowDraft = buildEditableWorkflowDraft(state.currentMeeting, { forceReset: true });
+  state.selectedWorkflowNodeId = state.workflowDraft?.nodes?.[0]?.id || null;
+  renderWorkflow();
+});
+
+workflowSaveBtn?.addEventListener("click", () => {
+  saveWorkflowDraft();
+});
+
+workflowComponentButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    addWorkflowNode(button.dataset.workflowComponent || "review");
+  });
 });
 
 function clearAuthFeedback() {
@@ -496,6 +517,8 @@ function clearSession() {
   state.authToken = "";
   state.currentMeeting = null;
   state.currentMeetingId = null;
+  state.workflowDraft = null;
+  state.selectedWorkflowNodeId = null;
   state.liveSession = null;
   state.meetings = [];
   state.sessionHasProcessed = false;
@@ -573,6 +596,8 @@ async function loadMeetingDetail(meetingId) {
   const response = await apiFetch(`/api/v1/meetings/${encodeURIComponent(resolvedMeetingId)}`);
   state.currentMeeting = await response.json();
   state.currentMeetingId = resolvedMeetingId;
+  state.workflowDraft = buildEditableWorkflowDraft(state.currentMeeting);
+  state.selectedWorkflowNodeId = state.workflowDraft?.nodes?.[0]?.id || null;
   state.sessionHasProcessed = true;
   updateDashboard();
   renderMeetingDetail();
@@ -1331,36 +1356,370 @@ function renderTrace() {
 }
 
 function renderWorkflow() {
-  if (!state.currentMeeting) {
-    document.getElementById("workflowCanvas").innerHTML = `<div class="empty-state">No workflow model available yet.</div>`;
-    document.getElementById("workflowProperties").innerHTML = `<div class="empty-state">Process a meeting to inspect workflow properties.</div>`;
+  const workflowCanvas = document.getElementById("workflowCanvas");
+  const workflowProperties = document.getElementById("workflowProperties");
+  if (!workflowCanvas || !workflowProperties) {
     return;
   }
 
-  const stages = state.currentMeeting.workflow_model?.stages || [];
-  const prioritized = state.currentMeeting.workflow_model?.prioritized_decisions || [];
-  const tasks = state.currentMeeting.workflow_model?.execution_plan || [];
-  document.getElementById("workflowCanvas").innerHTML =
-    stages.length === 0 && prioritized.length === 0
-      ? `<div class="empty-state">No workflow model available yet.</div>`
-      : `<div class="workflow-nodes">${
-          prioritized.slice(0, 6).map((item) => `<div class="workflow-node">#${item.execution_rank} ${item.decision_id}<br><small>${item.priority_score} | ${item.speaker}</small></div>`).join("")
-          || stages.slice(0, 6).map((stage) => `<div class="workflow-node">${stage.stage}</div>`).join("")
-        }</div>`;
+  if (!state.currentMeeting) {
+    workflowCanvas.innerHTML = `<div class="empty-state">No workflow model available yet.</div>`;
+    workflowProperties.innerHTML = `<div class="empty-state">Process a meeting to inspect workflow properties.</div>`;
+    return;
+  }
 
-  document.getElementById("workflowProperties").innerHTML = `
-    <div class="speaker-row"><span>Stages tracked</span><strong>${stages.length}</strong></div>
-    <div class="speaker-row"><span>Bottlenecks</span><strong>${state.currentMeeting.workflow_model?.bottlenecks?.length || 0}</strong></div>
-    <div class="speaker-row"><span>Execution readiness</span><strong>${state.currentMeeting.meeting_scores?.execution_readiness || 0}</strong></div>
-    <div class="speaker-row"><span>Queued tasks</span><strong>${tasks.length}</strong></div>
-    <div class="speaker-row"><span>Top decision</span><strong>${prioritized[0]?.decision_id || "None"}</strong></div>
-    <div class="speaker-row"><span>Top owner</span><strong>${tasks[0]?.owner || "Unassigned"}</strong></div>
-    <div class="speaker-row"><span>First task</span><strong>${shorten(tasks[0]?.title || "None", 42)}</strong></div>
-    <div class="speaker-row"><span>Focus</span><strong>${formatMetric(state.currentMeeting.meeting_scores?.cognitive_rating?.meeting_focus)}%</strong></div>
-    <div class="speaker-row"><span>Clarity</span><strong>${formatMetric(state.currentMeeting.meeting_scores?.cognitive_rating?.meeting_clarity)}%</strong></div>
-    <div class="speaker-row"><span>Overload Risk</span><strong>${formatMetric(state.currentMeeting.meeting_scores?.cognitive_rating?.overload_risk)}%</strong></div>
-    <div class="speaker-row"><span>Coverage</span><strong>${formatMetric((state.currentMeeting.attention_sentiment?.coverage_ratio || 0) * 100)}%</strong></div>
+  state.workflowDraft = state.workflowDraft || buildEditableWorkflowDraft(state.currentMeeting);
+  const draft = state.workflowDraft;
+  const selectedNode = draft.nodes.find((node) => node.id === state.selectedWorkflowNodeId) || draft.nodes[0] || null;
+  state.selectedWorkflowNodeId = selectedNode?.id || null;
+
+  if (!draft.nodes.length) {
+    workflowCanvas.innerHTML = `<div class="empty-state">No workflow model available yet.</div>`;
+    workflowProperties.innerHTML = `<div class="empty-state">Use New Workflow to start from a clean flow.</div>`;
+    return;
+  }
+
+  workflowCanvas.innerHTML = `
+    <div class="workflow-toolbar">
+      <div class="workflow-toolbar-copy">
+        <strong>${escapeHtml(draft.title || "Workflow draft")}</strong>
+        <span class="muted">${draft.nodes.length} nodes | ${draft.links.length} links | ${draft.meta.derivedFrom}</span>
+      </div>
+      <div class="workflow-toolbar-copy">
+        <span class="model-pill subtle">${escapeHtml(draft.meta.status || "draft")}</span>
+      </div>
+    </div>
+    <div class="workflow-board">
+      ${draft.nodes.map((node, index) => `
+        <button type="button" class="workflow-card ${node.id === state.selectedWorkflowNodeId ? "is-selected" : ""} type-${escapeHtml(node.type)}" data-workflow-node-id="${escapeHtml(node.id)}">
+          <span class="workflow-card-step">${String(index + 1).padStart(2, "0")}</span>
+          <strong>${escapeHtml(node.title)}</strong>
+          <div class="workflow-card-meta">
+            <span>${escapeHtml(capitalize(node.type))}</span>
+            <span>${escapeHtml(node.owner || "Unassigned")}</span>
+          </div>
+          <p>${escapeHtml(node.summary || "No summary recorded.")}</p>
+          <div class="workflow-card-footer">
+            <span class="status-badge neutral">${escapeHtml(node.status || "Draft")}</span>
+            <small>${escapeHtml(node.decisionId || node.sourceStage || "Manual node")}</small>
+          </div>
+        </button>
+        ${index < draft.nodes.length - 1 ? `<div class="workflow-connector"><span></span></div>` : ""}
+      `).join("")}
+    </div>
   `;
+
+  workflowCanvas.querySelectorAll("[data-workflow-node-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedWorkflowNodeId = button.dataset.workflowNodeId;
+      renderWorkflow();
+    });
+  });
+
+  workflowProperties.innerHTML = selectedNode
+    ? renderWorkflowPropertiesPanel(selectedNode, draft)
+    : `<div class="empty-state">Select a node to edit its workflow properties.</div>`;
+
+  bindWorkflowPropertyInputs();
+}
+
+function workflowStorageKey(meetingId) {
+  return `boardsight-workflow-draft:${meetingId || "workspace"}`;
+}
+
+function buildEditableWorkflowDraft(meeting, { forceReset = false } = {}) {
+  const meetingId = meeting?.storage?.meeting_id || state.currentMeetingId || "workspace";
+  if (!forceReset) {
+    const saved = localStorage.getItem(workflowStorageKey(meetingId));
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (error) {
+      }
+    }
+  }
+
+  const workflowModel = meeting?.workflow_model || {};
+  const prioritized = workflowModel.prioritized_decisions || [];
+  const tasks = workflowModel.execution_plan || [];
+  const stages = workflowModel.stages || [];
+  const bottlenecks = workflowModel.bottlenecks || [];
+  const decisions = meeting?.decision_moments || [];
+
+  const generatedNodes = [];
+  generatedNodes.push({
+    id: "node-start",
+    type: "start",
+    title: "Meeting Intake",
+    owner: meeting?.metadata?.source_mode === "live" ? "Live session" : "Recorded upload",
+    status: "Ready",
+    summary: "BoardSight ingests transcript, speaker, and visual context before workflow routing.",
+    notes: buildMeetingSubtitle(meeting),
+    decisionId: "",
+    sourceStage: "start",
+    dueDate: "",
+    priority: "High"
+  });
+
+  if (stages.length > 0) {
+    stages.slice(0, 3).forEach((stage, index) => {
+      generatedNodes.push({
+        id: `node-stage-${index + 1}`,
+        type: "review",
+        title: capitalize(stage.stage || stage.name || `Stage ${index + 1}`),
+        owner: stage.speaker || tasks[index]?.owner || "Meeting owner",
+        status: "Observed",
+        summary: stage.summary || "Workflow stage inferred from the meeting timeline.",
+        notes: `Confidence ${formatMetric(stage.confidence || 0)} | Source ${stage.source || "workflow inference"}`,
+        decisionId: "",
+        sourceStage: stage.stage || stage.name || "",
+        dueDate: "",
+        priority: "Medium"
+      });
+    });
+  }
+
+  prioritized.forEach((decision, index) => {
+    const linkedTask = tasks.find((task) => String(task.decision_id || "") === String(decision.decision_id || ""));
+    const linkedMoment = decisions.find((moment) => String(moment.event_id || "") === String(decision.decision_id || ""));
+    generatedNodes.push({
+      id: `node-decision-${index + 1}`,
+      type: index === 0 ? "decision" : "approval",
+      title: linkedTask?.title || linkedMoment?.text || decision.decision_id || `Decision ${index + 1}`,
+      owner: linkedTask?.owner || decision.speaker || linkedMoment?.speaker || "Unassigned",
+      status: bottlenecks.length > 0 && index === 0 ? "Blocked" : "Ready",
+      summary: linkedMoment?.text || decision.text || "Decision captured from the meeting.",
+      notes: `Priority ${formatMetric(decision.priority_score || 0)} | ${renderWorkflowReasoning(decision.reasoning || [])}`,
+      decisionId: decision.decision_id || "",
+      sourceStage: "decision",
+      dueDate: inferDueDate(`${linkedTask?.title || ""} ${linkedTask?.notes || ""}`),
+      priority: Number(decision.priority_score || 0) >= 80 ? "High" : "Medium"
+    });
+    if (linkedTask) {
+      generatedNodes.push({
+        id: `node-action-${index + 1}`,
+        type: "parallel",
+        title: linkedTask.title || `Execution task ${index + 1}`,
+        owner: linkedTask.owner || "Unassigned",
+        status: /\b(block|depend|waiting|pending)\b/i.test(String(linkedTask.notes || "")) ? "Blocked" : "Planned",
+        summary: linkedTask.notes || "Execution task derived from the workflow model.",
+        notes: `Task type ${linkedTask.task_type || "workflow"} | Order ${linkedTask.execution_order || index + 1}`,
+        decisionId: linkedTask.decision_id || "",
+        sourceStage: "execution",
+        dueDate: inferDueDate(`${linkedTask.title || ""} ${linkedTask.notes || ""}`),
+        priority: Number(linkedTask.priority_score || 0) >= 80 ? "High" : "Medium"
+      });
+    }
+  });
+
+  if (bottlenecks.length > 0) {
+    generatedNodes.push({
+      id: "node-escalation",
+      type: "escalation",
+      title: "Escalate blocker resolution",
+      owner: "PMO / Governance lead",
+      status: "Attention needed",
+      summary: bottlenecks.join(" | "),
+      notes: "Workflow bottlenecks were detected and should be resolved before closure.",
+      decisionId: "",
+      sourceStage: "escalation",
+      dueDate: "",
+      priority: "High"
+    });
+  }
+
+  generatedNodes.push({
+    id: "node-end",
+    type: "end",
+    title: "Close and monitor follow-through",
+    owner: "BoardSight",
+    status: "Pending",
+    summary: "Finalize the meeting workflow after owners, blockers, and next steps are validated.",
+    notes: "Use Save to persist this draft in the workspace browser.",
+    decisionId: "",
+    sourceStage: "end",
+    dueDate: "",
+    priority: "Medium"
+  });
+
+  const dedupedNodes = generatedNodes.filter((node, index, items) =>
+    index === items.findIndex((candidate) => candidate.title === node.title && candidate.type === node.type)
+  );
+  const links = dedupedNodes.slice(0, -1).map((node, index) => ({
+    from: node.id,
+    to: dedupedNodes[index + 1].id,
+    label: index === 0 ? "ingest" : "next"
+  }));
+
+  return {
+    meetingId: String(meetingId),
+    title: `${prettifyMeetingId(meetingId)} Workflow Draft`,
+    nodes: dedupedNodes,
+    links,
+    meta: {
+      derivedFrom: workflowModel?.workflow_summary?.source || "BoardSight workflow draft",
+      status: workflowModel?.workflow_summary?.status || (dedupedNodes.length > 2 ? "generated" : "draft")
+    }
+  };
+}
+
+function renderWorkflowReasoning(reasoning) {
+  const items = Array.isArray(reasoning) ? reasoning : [];
+  return items.length ? shorten(items.join(" | "), 90) : "No detailed reasoning recorded";
+}
+
+function renderWorkflowPropertiesPanel(node, draft) {
+  const linkedCount = draft.links.filter((link) => link.from === node.id || link.to === node.id).length;
+  return `
+    <div class="workflow-property-form">
+      <div class="speaker-row"><span>Node Type</span><strong>${escapeHtml(capitalize(node.type))}</strong></div>
+      <div class="speaker-row"><span>Linked edges</span><strong>${linkedCount}</strong></div>
+      <label>Title
+        <input type="text" data-workflow-field="title" value="${escapeAttribute(node.title)}">
+      </label>
+      <label>Owner
+        <input type="text" data-workflow-field="owner" value="${escapeAttribute(node.owner || "")}">
+      </label>
+      <label>Status
+        <input type="text" data-workflow-field="status" value="${escapeAttribute(node.status || "")}">
+      </label>
+      <label>Due Date
+        <input type="text" data-workflow-field="dueDate" value="${escapeAttribute(node.dueDate || "")}" placeholder="YYYY-MM-DD or Friday">
+      </label>
+      <label>Priority
+        <select data-workflow-field="priority">
+          ${["High", "Medium", "Low"].map((option) => `<option value="${option}" ${node.priority === option ? "selected" : ""}>${option}</option>`).join("")}
+        </select>
+      </label>
+      <label>Summary
+        <textarea rows="4" data-workflow-field="summary">${escapeHtml(node.summary || "")}</textarea>
+      </label>
+      <label>Notes
+        <textarea rows="5" data-workflow-field="notes">${escapeHtml(node.notes || "")}</textarea>
+      </label>
+      <div class="button-row">
+        <button type="button" class="ghost-btn" id="workflowDuplicateBtn">Duplicate</button>
+        <button type="button" class="ghost-btn" id="workflowDeleteBtn">Delete</button>
+      </div>
+      <div class="upload-status" id="workflowStatus">Changes stay editable locally until you save this workflow draft.</div>
+    </div>
+  `;
+}
+
+function bindWorkflowPropertyInputs() {
+  const workflowProperties = document.getElementById("workflowProperties");
+  if (!workflowProperties) {
+    return;
+  }
+  workflowProperties.querySelectorAll("[data-workflow-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      updateWorkflowNodeField(input.dataset.workflowField, input.value);
+    });
+  });
+  document.getElementById("workflowDuplicateBtn")?.addEventListener("click", duplicateWorkflowNode);
+  document.getElementById("workflowDeleteBtn")?.addEventListener("click", deleteWorkflowNode);
+}
+
+function updateWorkflowNodeField(field, value) {
+  if (!state.workflowDraft || !state.selectedWorkflowNodeId) {
+    return;
+  }
+  const node = state.workflowDraft.nodes.find((item) => item.id === state.selectedWorkflowNodeId);
+  if (!node) {
+    return;
+  }
+  node[field] = value;
+  renderWorkflow();
+}
+
+function addWorkflowNode(type) {
+  if (!state.currentMeeting) {
+    return;
+  }
+  state.workflowDraft = state.workflowDraft || buildEditableWorkflowDraft(state.currentMeeting);
+  const newId = `node-${type}-${Date.now()}`;
+  const newNode = {
+    id: newId,
+    type,
+    title: `${capitalize(type)} step`,
+    owner: "Unassigned",
+    status: "Draft",
+    summary: "Describe what should happen at this workflow step.",
+    notes: "Add detailed routing, approval, or execution guidance here.",
+    decisionId: "",
+    sourceStage: "manual",
+    dueDate: "",
+    priority: "Medium"
+  };
+  const endIndex = state.workflowDraft.nodes.findIndex((node) => node.type === "end");
+  const insertAt = endIndex >= 0 ? endIndex : state.workflowDraft.nodes.length;
+  state.workflowDraft.nodes.splice(insertAt, 0, newNode);
+  rebuildWorkflowLinks();
+  state.selectedWorkflowNodeId = newId;
+  renderWorkflow();
+}
+
+function duplicateWorkflowNode() {
+  if (!state.workflowDraft || !state.selectedWorkflowNodeId) {
+    return;
+  }
+  const index = state.workflowDraft.nodes.findIndex((node) => node.id === state.selectedWorkflowNodeId);
+  if (index < 0) {
+    return;
+  }
+  const source = state.workflowDraft.nodes[index];
+  const clone = {
+    ...source,
+    id: `${source.id}-copy-${Date.now()}`,
+    title: `${source.title} Copy`
+  };
+  state.workflowDraft.nodes.splice(index + 1, 0, clone);
+  rebuildWorkflowLinks();
+  state.selectedWorkflowNodeId = clone.id;
+  renderWorkflow();
+}
+
+function deleteWorkflowNode() {
+  if (!state.workflowDraft || !state.selectedWorkflowNodeId) {
+    return;
+  }
+  const node = state.workflowDraft.nodes.find((item) => item.id === state.selectedWorkflowNodeId);
+  if (!node || node.type === "start" || node.type === "end") {
+    return;
+  }
+  state.workflowDraft.nodes = state.workflowDraft.nodes.filter((item) => item.id !== state.selectedWorkflowNodeId);
+  rebuildWorkflowLinks();
+  state.selectedWorkflowNodeId = state.workflowDraft.nodes[0]?.id || null;
+  renderWorkflow();
+}
+
+function rebuildWorkflowLinks() {
+  if (!state.workflowDraft) {
+    return;
+  }
+  state.workflowDraft.links = state.workflowDraft.nodes.slice(0, -1).map((node, index) => ({
+    from: node.id,
+    to: state.workflowDraft.nodes[index + 1].id,
+    label: "next"
+  }));
+}
+
+function saveWorkflowDraft() {
+  if (!state.workflowDraft) {
+    return;
+  }
+  const key = workflowStorageKey(state.workflowDraft.meetingId || state.currentMeetingId);
+  state.workflowDraft.meta = {
+    ...state.workflowDraft.meta,
+    status: "saved-local",
+    savedAt: new Date().toISOString()
+  };
+  localStorage.setItem(key, JSON.stringify(state.workflowDraft));
+  const workflowStatus = document.getElementById("workflowStatus");
+  if (workflowStatus) {
+    workflowStatus.textContent = "Workflow draft saved in this workspace browser for continued editing.";
+  }
+  renderWorkflow();
 }
 
 async function loadActiveLiveSession() {
@@ -2571,6 +2930,10 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replaceAll("`", "&#96;");
 }
 
 function normalizeRole(value) {

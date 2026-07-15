@@ -307,15 +307,21 @@
                   <p class="muted">Decision approval workflows and escalation paths</p>
                 </div>
                 <div class="button-row">
-                  <button class="ghost-btn">New Workflow</button>
-                  <button class="primary-btn">Save</button>
+                  <button id="workflowNewBtn" class="ghost-btn">New Workflow</button>
+                  <button id="workflowSaveBtn" class="primary-btn">Save</button>
                 </div>
               </div>
               <div class="workflow-grid">
                 <aside class="panel nested component-list">
                   <h4>Components</h4>
                   <ul>
-                    <li>Start</li><li>Approval</li><li>Review</li><li>Decision</li><li>Parallel</li><li>Escalation</li><li>End</li>
+                    <li><button type="button" class="workflow-component-btn" data-workflow-component="start">Start</button></li>
+                    <li><button type="button" class="workflow-component-btn" data-workflow-component="approval">Approval</button></li>
+                    <li><button type="button" class="workflow-component-btn" data-workflow-component="review">Review</button></li>
+                    <li><button type="button" class="workflow-component-btn" data-workflow-component="decision">Decision</button></li>
+                    <li><button type="button" class="workflow-component-btn" data-workflow-component="parallel">Parallel</button></li>
+                    <li><button type="button" class="workflow-component-btn" data-workflow-component="escalation">Escalation</button></li>
+                    <li><button type="button" class="workflow-component-btn" data-workflow-component="end">End</button></li>
                   </ul>
                 </aside>
                 <div id="workflowCanvas" class="workflow-canvas panel nested"></div>
