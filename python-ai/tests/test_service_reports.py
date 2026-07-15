@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from boardsight_ai.database import execute
+from boardsight_ai.reporting import write_structured_reports
 from boardsight_ai.service import MEETING_DB_PATH, _regenerate_meeting_report_from_record
 from boardsight_ai.storage import get_meeting_result, init_storage
 
@@ -43,3 +46,34 @@ def test_regenerate_meeting_report_from_record_without_original_output_dir(tmp_p
     assert regenerated.exists()
     assert regenerated.name == "structured_report.pdf"
 
+
+def test_write_structured_reports_generates_enterprise_sections(tmp_path: Path, sample_pipeline_result) -> None:
+    files = write_structured_reports(sample_pipeline_result, tmp_path)
+
+    markdown_path = Path(files["markdown_report"])
+    assert markdown_path.exists()
+    markdown = markdown_path.read_text(encoding="utf-8")
+    assert "## Decision Register" in markdown
+    assert "## Action Register" in markdown
+    assert "## Blockers and Risks" in markdown
+    assert "## Traceability" in markdown
+    assert "## Recommended Follow-Through" in markdown
+
+    excel_path = Path(files["xlsx"])
+    assert excel_path.exists()
+    workbook = pd.ExcelFile(excel_path)
+    assert set(workbook.sheet_names) >= {
+        "summary",
+        "decisions",
+        "actions",
+        "blockers_risks",
+        "workflow",
+        "speakers",
+        "visual_evidence",
+        "traceability",
+        "transcript",
+    }
+
+    assert Path(files["docx"]).exists()
+    assert Path(files["pdf"]).exists()
+    assert Path(files["image"]).exists()
