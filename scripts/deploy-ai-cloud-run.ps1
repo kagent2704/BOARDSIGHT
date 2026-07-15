@@ -3,14 +3,21 @@ param(
     [string]$Region = "us-central1",
     [string]$ServiceName = "boardsight-ai",
     [string]$AgentApiKey = "",
+    [string]$AgentApiSecretName = "",
     [string]$DatabaseUrl = "",
+    [string]$DatabaseUrlSecretName = "",
     [string]$GitLabBaseUrl = "",
     [string]$GitLabProjectId = "",
     [string]$GitLabPrivateToken = "",
     [string]$DataEncryptionSecretName = "",
     [string]$LlmProvider = "extractive",
     [string]$GeminiApiKey = "",
+    [string]$GeminiApiSecretName = "",
     [string]$GeminiModel = "gemini-3.1-flash-lite",
+    [string]$BootstrapAdminPassword = "",
+    [string]$BootstrapAdminPasswordSecretName = "",
+    [string]$ResendApiKey = "",
+    [string]$ResendApiSecretName = "",
     [string]$Memory = "4Gi",
     [int]$Cpu = 2,
     [int]$TimeoutSeconds = 900,
@@ -57,6 +64,9 @@ if ($GitLabBaseUrl -or $GitLabProjectId -or $GitLabPrivateToken) {
 if ($GeminiApiKey) {
     Write-Host "Gemini API: configured"
 }
+if ($GeminiApiSecretName) {
+    Write-Host "Gemini API secret: configured"
+}
 
 & $gcloudCmd config set project $ProjectId | Out-Null
 & $gcloudCmd config set run/region $Region | Out-Null
@@ -68,14 +78,20 @@ $envVars = @(
     "BOARDSIGHT_WARM_MODELS=0",
     "BOARDSIGHT_LLM_PROVIDER=$LlmProvider"
 )
-if ($GeminiApiKey) {
+if ($GeminiApiSecretName) {
+    $envVars += "BOARDSIGHT_GEMINI_MODEL=$GeminiModel"
+} elseif ($GeminiApiKey) {
     $envVars += "GEMINI_API_KEY=$GeminiApiKey"
     $envVars += "BOARDSIGHT_GEMINI_MODEL=$GeminiModel"
 }
-if ($AgentApiKey) {
+if ($AgentApiSecretName) {
+    $null = $null
+} elseif ($AgentApiKey) {
     $envVars += "BOARDSIGHT_AGENT_API_KEY=$AgentApiKey"
 }
-if ($DatabaseUrl) {
+if ($DatabaseUrlSecretName) {
+    $null = $null
+} elseif ($DatabaseUrl) {
     $envVars += "BOARDSIGHT_DATABASE_URL=$DatabaseUrl"
 }
 if ($GitLabBaseUrl) {
@@ -87,10 +103,35 @@ if ($GitLabProjectId) {
 if ($GitLabPrivateToken) {
     $envVars += "BOARDSIGHT_GITLAB_PRIVATE_TOKEN=$GitLabPrivateToken"
 }
+if ($BootstrapAdminPasswordSecretName) {
+    $null = $null
+} elseif ($BootstrapAdminPassword) {
+    $envVars += "BOARDSIGHT_BOOTSTRAP_ADMIN_PASSWORD=$BootstrapAdminPassword"
+}
+if ($ResendApiSecretName) {
+    $null = $null
+} elseif ($ResendApiKey) {
+    $envVars += "BOARDSIGHT_RESEND_API_KEY=$ResendApiKey"
+}
 
 $secretVars = @()
 if ($DataEncryptionSecretName) {
     $secretVars += "BOARDSIGHT_DATA_ENCRYPTION_KEY=$DataEncryptionSecretName`:latest"
+}
+if ($GeminiApiSecretName) {
+    $secretVars += "GEMINI_API_KEY=$GeminiApiSecretName`:latest"
+}
+if ($AgentApiSecretName) {
+    $secretVars += "BOARDSIGHT_AGENT_API_KEY=$AgentApiSecretName`:latest"
+}
+if ($DatabaseUrlSecretName) {
+    $secretVars += "BOARDSIGHT_DATABASE_URL=$DatabaseUrlSecretName`:latest"
+}
+if ($BootstrapAdminPasswordSecretName) {
+    $secretVars += "BOARDSIGHT_BOOTSTRAP_ADMIN_PASSWORD=$BootstrapAdminPasswordSecretName`:latest"
+}
+if ($ResendApiSecretName) {
+    $secretVars += "BOARDSIGHT_RESEND_API_KEY=$ResendApiSecretName`:latest"
 }
 
 $deployArgs = @(

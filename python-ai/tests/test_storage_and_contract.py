@@ -5,6 +5,7 @@ from pathlib import Path
 
 from boardsight_ai.database import execute, table_columns
 from boardsight_ai.agentic_contract import build_agentic_contract
+from boardsight_ai.models import pipeline_result_from_dict
 from boardsight_ai.storage import (
     create_live_session,
     get_live_session,
@@ -87,6 +88,16 @@ def test_sensitive_storage_is_encrypted_at_rest_and_decrypted_on_read(tmp_path: 
     assert stored["transcript_text"] == sample_pipeline_result.transcript.full_text
     assert json.loads(str(stored["result_json"]))["input_video"] == sample_pipeline_result.input_video
     assert live_session["title"] == "Protected session"
+
+
+def test_pipeline_result_from_dict_round_trips_sample(sample_pipeline_result) -> None:
+    restored = pipeline_result_from_dict(sample_pipeline_result.to_dict())
+
+    assert restored.input_video == sample_pipeline_result.input_video
+    assert restored.transcript.full_text == sample_pipeline_result.transcript.full_text
+    assert len(restored.transcript.segments) == len(sample_pipeline_result.transcript.segments)
+    assert restored.visual_artifacts[0].artifact_type == sample_pipeline_result.visual_artifacts[0].artifact_type
+    assert restored.workflow_model.execution_plan[0]["title"] == sample_pipeline_result.workflow_model.execution_plan[0]["title"]
 
 
 def test_protect_sensitive_storage_encrypts_legacy_plaintext_rows(tmp_path: Path, monkeypatch) -> None:

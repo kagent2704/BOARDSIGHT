@@ -7,6 +7,13 @@ from pathlib import Path
 from boardsight_ai.models import PipelineResult
 
 
+def _coalesce_mapping_value(mapping: dict[str, object], *keys: str, default: object = "n/a") -> object:
+    for key in keys:
+        if key in mapping and mapping[key] not in (None, ""):
+            return mapping[key]
+    return default
+
+
 def write_structured_reports(result: PipelineResult, output_dir: Path) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     files: dict[str, str] = {}
@@ -53,6 +60,10 @@ def write_structured_reports(result: PipelineResult, output_dir: Path) -> dict[s
 
 
 def build_markdown_report(result: PipelineResult) -> str:
+    cognitive_rating = result.meeting_scores.cognitive_rating or {}
+    focus = _coalesce_mapping_value(cognitive_rating, "meeting_focus", "focus")
+    clarity = _coalesce_mapping_value(cognitive_rating, "meeting_clarity", "clarity")
+    overload_risk = _coalesce_mapping_value(cognitive_rating, "overload_risk")
     lines = [
         "# BoardSight Structured Report",
         "",
@@ -82,8 +93,13 @@ def build_markdown_report(result: PipelineResult) -> str:
         ]
     )
     for item in result.workflow_model.prioritized_decisions:
+        decision_id = item.get("decision_id", "unknown-decision")
+        execution_rank = item.get("execution_rank", "?")
+        priority_score = item.get("priority_score", "?")
+        speaker = item.get("speaker", "Unknown speaker")
+        text = item.get("text", item.get("summary", "No decision text available."))
         lines.append(
-            f"- Rank {item['execution_rank']}: {item['decision_id']} | score {item['priority_score']} | {item['speaker']} | {item['text']}"
+            f"- Rank {execution_rank}: {decision_id} | score {priority_score} | {speaker} | {text}"
         )
 
     lines.extend(
@@ -93,8 +109,12 @@ def build_markdown_report(result: PipelineResult) -> str:
         ]
     )
     for task in result.workflow_model.execution_plan:
+        execution_order = task.get("execution_order", "?")
+        title = task.get("title", "Untitled task")
+        owner = task.get("owner", "Unassigned")
+        priority_score = task.get("priority_score", "?")
         lines.append(
-            f"- {task['execution_order']}. {task['title']} | owner: {task['owner']} | priority: {task['priority_score']}"
+            f"- {execution_order}. {title} | owner: {owner} | priority: {priority_score}"
         )
 
     lines.extend(
@@ -121,9 +141,9 @@ def build_markdown_report(result: PipelineResult) -> str:
         [
             "",
             "## Cognitive Rating",
-            f"- Focus: {result.meeting_scores.cognitive_rating['meeting_focus']}",
-            f"- Clarity: {result.meeting_scores.cognitive_rating['meeting_clarity']}",
-            f"- Overload risk: {result.meeting_scores.cognitive_rating['overload_risk']}",
+            f"- Focus: {focus}",
+            f"- Clarity: {clarity}",
+            f"- Overload risk: {overload_risk}",
             "",
             "## Organizational Impact Analysis",
             "- Operational quality: decisions with owners improve coordination and execution discipline.",
@@ -155,15 +175,23 @@ def write_docx_report(result: PipelineResult, path: Path) -> None:
     document.add_heading("Prioritized Decisions", level=2)
     if result.workflow_model.prioritized_decisions:
         for item in result.workflow_model.prioritized_decisions:
+            execution_rank = item.get("execution_rank", "?")
+            decision_id = item.get("decision_id", "unknown-decision")
+            priority_score = item.get("priority_score", "?")
+            text = item.get("text", item.get("summary", "No decision text available."))
             document.add_paragraph(
-                f"Rank {item['execution_rank']} | {item['decision_id']} | score {item['priority_score']} | {item['text']}",
+                f"Rank {execution_rank} | {decision_id} | score {priority_score} | {text}",
                 style="List Bullet",
             )
     document.add_heading("Execution Plan", level=2)
     if result.workflow_model.execution_plan:
         for task in result.workflow_model.execution_plan:
+            execution_order = task.get("execution_order", "?")
+            title = task.get("title", "Untitled task")
+            owner = task.get("owner", "Unassigned")
+            priority_score = task.get("priority_score", "?")
             document.add_paragraph(
-                f"{task['execution_order']} | {task['title']} | owner {task['owner']} | priority {task['priority_score']}",
+                f"{execution_order} | {title} | owner {owner} | priority {priority_score}",
                 style="List Bullet",
             )
     document.save(path)
@@ -210,7 +238,9 @@ def write_pdf_report(result: PipelineResult, path: Path) -> None:
     y -= 18
     pdf.setFont("Helvetica", 10)
     for task in result.workflow_model.execution_plan[:8]:
-        pdf.drawString(50, y, f"{task['execution_order']}. {task['title'][:88]}")
+        execution_order = task.get("execution_order", "?")
+        title = str(task.get("title", "Untitled task"))
+        pdf.drawString(50, y, f"{execution_order}. {title[:88]}")
         y -= 16
         if y < 80:
             pdf.showPage()

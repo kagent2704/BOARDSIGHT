@@ -18,6 +18,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 
 try:
     from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+    from starlette.background import BackgroundTask
     from fastapi.responses import FileResponse
     import uvicorn
 except Exception as exc:  # pragma: no cover
@@ -78,6 +79,8 @@ from boardsight_ai.storage import (
     save_live_copilot_reply,
     save_meeting_result,
 )
+from boardsight_ai.reporting import write_structured_reports
+from boardsight_ai.models import pipeline_result_from_dict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "output" / "appdata"
@@ -553,14 +556,62 @@ def meeting_report(meeting_id: int, file_name: str, request: Request):
     user = _require_session_user(request)
     record = _resolve_owned_meeting_record(meeting_id, user)
     output_dir = Path(str(record.get("output_dir") or "")).resolve()
-    if not output_dir.exists():
-        raise HTTPException(status_code=404, detail="Stored analysis output directory is missing.")
-    candidate = (output_dir / file_name).resolve()
-    if not str(candidate).startswith(str(output_dir)):
-        raise HTTPException(status_code=400, detail="Invalid report path.")
-    if not candidate.exists():
+    if output_dir.exists():
+        candidate = (output_dir / file_name).resolve()
+        if not str(candidate).startswith(str(output_dir)):
+            raise HTTPException(status_code=400, detail="Invalid report path.")
+        if candidate.exists():
+            return FileResponse(candidate, filename=candidate.name)
+    regenerated = _regenerate_meeting_report_from_record(record, file_name)
+    if regenerated is None:
         raise HTTPException(status_code=404, detail="Requested report file was not found.")
-    return FileResponse(candidate, filename=candidate.name)
+    return FileResponse(
+        regenerated,
+        filename=Path(file_name).name,
+        background=BackgroundTask(_cleanup_temp_report_artifact, regenerated.parent),
+    )
+
+
+def _cleanup_temp_report_artifact(path: Path) -> None:
+    try:
+        if path.exists():
+            for child in path.iterdir():
+                child.unlink(missing_ok=True)
+            path.rmdir()
+    except Exception:
+        pass
+
+
+def _regenerate_meeting_report_from_record(record: dict, file_name: str) -> Path | None:
+    allowed_reports = {
+        "structured_report.pdf",
+        "structured_report.docx",
+        "structured_report.xlsx",
+        "transcript.csv",
+        "summary_card.png",
+    }
+    safe_name = Path(file_name).name
+    if safe_name not in allowed_reports:
+        return None
+    payload = json.loads(str(record.get("result_json") or "{}"))
+    result = pipeline_result_from_dict(payload)
+    temp_dir = Path(tempfile.mkdtemp(prefix=f"boardsight-report-{int(record['id'])}-"))
+    report_files = write_structured_reports(result, temp_dir)
+    key_lookup = {
+        "structured_report.pdf": "pdf",
+        "structured_report.docx": "docx",
+        "structured_report.xlsx": "xlsx",
+        "transcript.csv": "excel_ready_csv",
+        "summary_card.png": "image",
+    }
+    report_key = key_lookup[safe_name]
+    resolved = report_files.get(report_key)
+    if not resolved:
+        return None
+    candidate = Path(str(resolved)).resolve()
+    if not candidate.exists():
+        return None
+    return candidate
 
 
 def _resolve_owned_live_session(session_id: int, user: dict) -> dict:
