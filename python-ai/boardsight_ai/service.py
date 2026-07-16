@@ -226,6 +226,19 @@ def _send_verification_email_safe(*, to_email: str, display_name: str, verificat
         pass
 
 
+def _queue_verification_email(*, to_email: str, display_name: str, verification_url: str) -> None:
+    threading.Thread(
+        target=_send_verification_email_safe,
+        kwargs={
+            "to_email": to_email,
+            "display_name": display_name,
+            "verification_url": verification_url,
+        },
+        daemon=True,
+        name="boardsight-verification-email",
+    ).start()
+
+
 def _render_verification_result_page(*, status: str, email: str, app_url: str, detail: str) -> HTMLResponse:
     title = "Email Verified" if status == "verified" else "Verification Issue"
     eyebrow = "BoardSight Account Ready" if status == "verified" else "Verification Needs Attention"
@@ -550,8 +563,7 @@ async def register(request: Request, background_tasks: BackgroundTasks, payload:
     raw_token = issue_email_verification_token(AUTH_DB_PATH, int(user["user_id"]), email)
     verification_url = f"{_verification_base_url(request)}/api/v1/auth/verify-email?token={raw_token}"
     if _email_provider_is_configured():
-        background_tasks.add_task(
-            _send_verification_email_safe,
+        _queue_verification_email(
             to_email=email,
             display_name=display_name,
             verification_url=verification_url,
@@ -613,8 +625,7 @@ async def resend_verification(request: Request, background_tasks: BackgroundTask
     raw_token = issue_email_verification_token(AUTH_DB_PATH, int(user["id"]), str(user["email"]))
     verification_url = f"{_verification_base_url(request)}/api/v1/auth/verify-email?token={raw_token}"
     if _email_provider_is_configured():
-        background_tasks.add_task(
-            _send_verification_email_safe,
+        _queue_verification_email(
             to_email=str(user["email"]),
             display_name=str(user.get("display_name") or user.get("username") or "there"),
             verification_url=verification_url,

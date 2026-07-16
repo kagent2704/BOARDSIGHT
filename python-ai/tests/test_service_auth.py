@@ -16,7 +16,7 @@ def test_register_returns_verification_pending_without_blocking_delivery(tmp_pat
 
     delivery_calls: list[dict[str, str]] = []
 
-    def fake_send_verification_email_safe(*, to_email: str, display_name: str, verification_url: str) -> None:
+    def fake_queue_verification_email(*, to_email: str, display_name: str, verification_url: str) -> None:
         delivery_calls.append(
             {
                 "to_email": to_email,
@@ -25,7 +25,7 @@ def test_register_returns_verification_pending_without_blocking_delivery(tmp_pat
             }
         )
 
-    monkeypatch.setattr("boardsight_ai.service._send_verification_email_safe", fake_send_verification_email_safe)
+    monkeypatch.setattr("boardsight_ai.service._queue_verification_email", fake_queue_verification_email)
 
     client = TestClient(app)
     response = client.post(
