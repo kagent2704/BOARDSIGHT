@@ -266,7 +266,7 @@ body:has(.landing-auth:not(.hidden)),
 
 .landing-cta-row {
   display: flex;
-  margin-bottom: 18px;
+  margin-bottom: 54px;
 }
 
 .landing-demo-btn {
@@ -433,7 +433,7 @@ body:has(.landing-auth:not(.hidden)),
 
 .landing-feature-bar {
   max-width: 1400px;
-  margin: 18px auto 0;
+  margin: 52px auto 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 1px solid rgba(123, 110, 255, 0.14);
