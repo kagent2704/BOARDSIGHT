@@ -112,7 +112,11 @@ body {
 
 .landing-auth.elevated {
   max-width: 100%;
-  margin: -10px -20px -20px;
+  width: 100vw;
+  margin-top: -10px;
+  margin-right: calc(50% - 50vw);
+  margin-bottom: -20px;
+  margin-left: calc(50% - 50vw);
   min-height: 100vh;
   border: 0;
   border-radius: 0;
@@ -120,7 +124,7 @@ body {
 }
 
 .landing-auth {
-  padding: 32px 52px 48px;
+  padding: 24px 52px 30px;
   background:
     radial-gradient(circle at 74% 28%, rgba(99, 102, 241, 0.24), transparent 24%),
     radial-gradient(circle at 62% 78%, rgba(99, 102, 241, 0.10), transparent 22%),
@@ -141,7 +145,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin: 0 auto;
+  margin: 0 auto 4px;
   max-width: 1400px;
 }
 
@@ -179,8 +183,8 @@ body {
 }
 
 .landing-nav-btn {
-  min-width: 108px;
-  padding: 14px 26px;
+  min-width: 102px;
+  padding: 12px 22px;
   border-radius: 18px;
   border: 1px solid rgba(130, 122, 255, 0.22);
   background: rgba(10, 12, 31, 0.35);
@@ -189,7 +193,7 @@ body {
 }
 
 .landing-actions {
-  gap: 14px;
+  gap: 12px;
 }
 
 .landing-theme-btn {
@@ -198,17 +202,17 @@ body {
 
 .landing-hero {
   max-width: 1400px;
-  margin: 76px auto 54px;
+  margin: 34px auto 26px;
   display: grid;
-  grid-template-columns: minmax(0, 1.02fr) minmax(480px, 640px);
+  grid-template-columns: minmax(0, 1.04fr) minmax(420px, 560px);
   align-items: center;
-  gap: 56px;
+  gap: 40px;
 }
 
 .landing-copy {
   display: grid;
-  gap: 28px;
-  padding-top: 18px;
+  gap: 22px;
+  padding-top: 6px;
 }
 
 .landing-headline {
@@ -216,8 +220,8 @@ body {
   display: grid;
   gap: 4px;
   max-width: 10ch;
-  font-size: clamp(64px, 7vw, 84px);
-  line-height: 0.98;
+  font-size: clamp(52px, 6vw, 72px);
+  line-height: 0.97;
   letter-spacing: -0.06em;
 }
 
@@ -231,8 +235,8 @@ body {
 .landing-lead {
   margin: 0;
   max-width: 31ch;
-  font-size: 19px;
-  line-height: 1.7;
+  font-size: 17px;
+  line-height: 1.6;
   color: #a8b2cb;
 }
 
@@ -241,24 +245,25 @@ body {
 }
 
 .landing-demo-btn {
-  min-width: 254px;
-  min-height: 62px;
-  justify-content: space-between;
-  padding-inline: 38px;
+  min-width: 220px;
+  min-height: 56px;
+  justify-content: center;
+  padding-inline: 30px;
   border-radius: 16px;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 500;
 }
 
 .landing-demo-btn::after {
   content: "\2192";
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
+  margin-left: 10px;
 }
 
 .landing-orbital {
   position: relative;
-  min-height: 600px;
+  min-height: 470px;
 }
 
 .orbital-ring {
@@ -269,21 +274,21 @@ body {
 }
 
 .orbital-ring-outer {
-  width: 620px;
-  height: 620px;
+  width: 500px;
+  height: 500px;
   border: 1px dashed rgba(113, 92, 255, 0.18);
   box-shadow: 0 0 120px rgba(99, 102, 241, 0.12);
 }
 
 .orbital-ring-mid {
-  width: 560px;
-  height: 560px;
+  width: 454px;
+  height: 454px;
   border: 1px dashed rgba(113, 92, 255, 0.14);
 }
 
 .orbital-ring-inner {
-  width: 510px;
-  height: 510px;
+  width: 414px;
+  height: 414px;
   border: 1px solid rgba(151, 132, 255, 0.08);
 }
 
@@ -296,23 +301,23 @@ body {
   box-shadow: 0 0 14px rgba(159, 122, 234, 0.9);
 }
 
-.orbital-star-one { top: 82px; right: 98px; }
-.orbital-star-two { top: 188px; left: 54px; }
-.orbital-star-three { right: 138px; bottom: 118px; }
-.orbital-star-four { left: 102px; bottom: 164px; }
+.orbital-star-one { top: 72px; right: 76px; }
+.orbital-star-two { top: 156px; left: 58px; }
+.orbital-star-three { right: 118px; bottom: 108px; }
+.orbital-star-four { left: 94px; bottom: 138px; }
 
 .orbital-core {
   position: absolute;
   inset: 50%;
   transform: translate(-50%, -50%);
-  width: 470px;
-  height: 470px;
+  width: 376px;
+  height: 376px;
   border-radius: 50%;
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 22px;
-  padding: 72px;
+  gap: 16px;
+  padding: 54px;
   text-align: center;
   background:
     radial-gradient(circle at 24% 18%, rgba(144, 120, 255, 0.85), rgba(144, 120, 255, 0.15) 18%, transparent 28%),
@@ -325,14 +330,14 @@ body {
 }
 
 .orbital-kicker {
-  font-size: 14px;
+  font-size: 12px;
   letter-spacing: 0.24em;
   text-transform: uppercase;
   color: #a78bfa;
 }
 
 .orbital-core strong {
-  font-size: 34px;
+  font-size: 28px;
   line-height: 1.18;
   letter-spacing: -0.04em;
 }
@@ -345,8 +350,8 @@ body {
 
 .orbital-core small {
   display: flex;
-  gap: 22px;
-  font-size: 14px;
+  gap: 16px;
+  font-size: 12px;
   color: #d9d7eb;
 }
 
@@ -356,7 +361,7 @@ body {
 
 .landing-feature-bar {
   max-width: 1400px;
-  margin: 14px auto 0;
+  margin: 6px auto 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 1px solid rgba(123, 110, 255, 0.14);
@@ -370,7 +375,7 @@ body {
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr);
   gap: 18px;
-  padding: 30px 26px;
+  padding: 24px 22px;
 }
 
 .landing-feature-card + .landing-feature-card {
@@ -395,27 +400,17 @@ body {
 
 .landing-feature-card strong {
   display: block;
-  margin-bottom: 10px;
-  font-size: 16px;
+  margin-bottom: 8px;
+  font-size: 15px;
   font-weight: 500;
   color: #b695ff;
 }
 
 .landing-feature-card p {
   margin: 0;
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 1.55;
   color: #d7dceb;
-}
-
-.landing-chevron {
-  width: 24px;
-  height: 24px;
-  margin: 30px auto 0;
-  border-right: 2px solid rgba(164, 147, 255, 0.75);
-  border-bottom: 2px solid rgba(164, 147, 255, 0.75);
-  transform: rotate(45deg);
-  opacity: 0.82;
 }
 
 .landing-auth .auth-card-wrap {
@@ -2022,7 +2017,11 @@ body.popup-live-copilot #liveCopilotAnswer {
     padding: 24px 18px 36px;
   }
   .landing-auth.elevated {
-    margin: -12px -12px -12px;
+    width: 100vw;
+    margin-top: -12px;
+    margin-right: calc(50% - 50vw);
+    margin-bottom: -12px;
+    margin-left: calc(50% - 50vw);
   }
   .landing-nav {
     flex-wrap: wrap;

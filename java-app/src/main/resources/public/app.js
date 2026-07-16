@@ -30,6 +30,7 @@ const loginForm = document.getElementById("loginForm");
 const themeToggle = document.getElementById("themeToggle");
 const landingThemeToggle = document.getElementById("landingThemeToggle");
 const authOpenBtn = document.getElementById("authOpenBtn");
+const authSignupBtn = document.getElementById("authSignupBtn");
 const authCloseBtn = document.getElementById("authCloseBtn");
 const authModalBackdrop = document.getElementById("authModalBackdrop");
 const refreshBtn = document.getElementById("refreshBtn");
@@ -135,7 +136,11 @@ landingThemeToggle?.addEventListener("click", () => {
 });
 
 authOpenBtn?.addEventListener("click", () => {
-  openAuthModal();
+  openAuthModal("signin");
+});
+
+authSignupBtn?.addEventListener("click", () => {
+  openAuthModal("signup");
 });
 
 authCloseBtn?.addEventListener("click", () => {
@@ -228,8 +233,8 @@ function clearAuthFeedback() {
   authStatus.classList.remove("success-text", "error-text");
 }
 
-function openAuthModal() {
-  state.authMode = "signin";
+function openAuthModal(mode = "signin") {
+  state.authMode = mode;
   clearAuthFeedback();
   syncAuthMode();
   loginView.classList.add("auth-modal-open");
