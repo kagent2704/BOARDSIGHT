@@ -15,8 +15,31 @@ const state = {
   authMode: "signin",
   currentUser: DEFAULT_USER,
   authToken: localStorage.getItem("boardsight-token") || "",
-  theme: localStorage.getItem("boardsight-theme") || "dark"
+  theme: localStorage.getItem("boardsight-theme") || "dark",
+  demoGuide: []
 };
+
+const API_BASE = (() => {
+  const explicitBase = String(window.BOARDSIGHT_API_BASE || "").trim();
+  if (explicitBase) {
+    return explicitBase.replace(/\/$/, "");
+  }
+  const { protocol, hostname, port, origin } = window.location;
+  if ((hostname === "localhost" || hostname === "127.0.0.1") && port === "8080") {
+    return `${protocol}//${hostname}:8000`;
+  }
+  return origin.replace(/\/$/, "");
+})();
+
+function apiUrl(path) {
+  if (!path) {
+    return API_BASE;
+  }
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 const urlParams = new URLSearchParams(window.location.search);
 const isLiveCopilotPopup = urlParams.get("popup") === "live-copilot";
@@ -75,6 +98,7 @@ const analysisProfileInput = document.getElementById("analysisProfileInput");
 const openLivePopupBtn = document.getElementById("openLivePopupBtn");
 const notificationsBtn = document.getElementById("notificationsBtn");
 const notificationsPanel = document.getElementById("notificationsPanel");
+const notificationsHeading = notificationsPanel?.querySelector("strong");
 const liveSessionTitleInput = document.getElementById("liveSessionTitleInput");
 const liveSpeakerInput = document.getElementById("liveSpeakerInput");
 const liveStartBtn = document.getElementById("liveStartBtn");
@@ -170,9 +194,7 @@ resendVerificationBtn?.addEventListener("click", async () => {
 });
 
 guestLogin.addEventListener("click", async () => {
-  usernameInput.value = "admin";
-  passwordInput.value = "boardsight123";
-  await submitLogin("admin", "boardsight123");
+  await launchDemoSession();
 });
 
 guestHeroBtn?.addEventListener("click", () => {
@@ -288,7 +310,7 @@ async function withAuthPending(task, busyLabel) {
 
 async function resendVerification(identifier) {
   await withAuthPending(async () => {
-    const response = await fetch("/api/v1/auth/resend-verification", {
+    const response = await fetch(apiUrl("/api/v1/auth/resend-verification"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ identifier })
@@ -318,7 +340,7 @@ refreshBtn.addEventListener("click", () => loadMeetings());
 signOutBtn.addEventListener("click", async () => {
   if (state.authToken) {
     try {
-      await fetch("/api/v1/auth/logout", {
+      await fetch(apiUrl("/api/v1/auth/logout"), {
         method: "POST",
         headers: { Authorization: `Bearer ${state.authToken}` }
       });
@@ -482,7 +504,7 @@ async function registerUser() {
     return { ok: false, message: "Password and confirm password must match." };
   }
 
-  const response = await fetch("/api/v1/auth/register", {
+  const response = await fetch(apiUrl("/api/v1/auth/register"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -520,7 +542,7 @@ async function registerUser() {
 }
 
 async function submitLogin(username, password) {
-  const response = await fetch("/api/v1/auth/login", {
+  const response = await fetch(apiUrl("/api/v1/auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ identifier: username, password })
@@ -542,10 +564,40 @@ async function submitLogin(username, password) {
     return;
   }
 
+  await activateAuthenticatedApp(payload);
+}
+
+async function launchDemoSession() {
+  await withAuthPending(async () => {
+    const response = await fetch(apiUrl("/api/v1/demo/session"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    if (!response.ok) {
+      setAuthFeedback(normalizeMessage(payload.detail || payload.error || "Unable to load the demo workspace."));
+      return;
+    }
+    await activateAuthenticatedApp(payload, {
+      featuredMeetingId: payload.demo?.featuredMeetingId || payload.demo?.featured_meeting_id || "",
+      preferredView: payload.demo?.preferredView || payload.demo?.preferred_view || "dashboard",
+      guide: payload.demo?.guide || []
+    });
+  }, "Loading demo...");
+}
+
+async function activateAuthenticatedApp(payload, options = {}) {
   state.authToken = payload.token || "";
   localStorage.setItem("boardsight-token", state.authToken);
   state.currentUser = normalizeUser(payload);
+  state.demoGuide = Array.isArray(options.guide) ? options.guide.filter(Boolean) : [];
   updateUserChip();
+  updateNotificationsPanel();
   clearAuthFeedback();
   closeAuthModal();
   loginView.classList.add("hidden");
@@ -555,6 +607,13 @@ async function submitLogin(username, password) {
   }
   await loadMeetings();
   await loadActiveLiveSession();
+  const featuredMeetingId = String(options.featuredMeetingId || "").trim();
+  if (featuredMeetingId) {
+    await loadMeetingDetail(featuredMeetingId);
+  }
+  if (!isLiveCopilotPopup) {
+    setView(options.preferredView || "dashboard");
+  }
 }
 
 function clearSession() {
@@ -566,12 +625,14 @@ function clearSession() {
   state.liveSession = null;
   state.meetings = [];
   state.sessionHasProcessed = false;
+  state.demoGuide = [];
   state.currentUser = DEFAULT_USER;
   localStorage.removeItem("boardsight-token");
   stopLiveListening();
   stopLiveScreenCapture();
   stopLivePolling();
   updateUserChip();
+  updateNotificationsPanel();
   renderEmptyDashboard();
   renderMeetingList();
   renderMeetingDetail();
@@ -604,6 +665,29 @@ function updateUserChip() {
   const firstName = state.currentUser.displayName.split(/\s+/).filter(Boolean)[0] || "there";
   heroGreeting.textContent = `${timeOfDayGreeting()}, ${firstName} 👋`;
   document.querySelector(".hero p")?.replaceChildren("Here's what's happening in your workspace today.");
+}
+
+function updateNotificationsPanel() {
+  if (!notificationsPanel) {
+    return;
+  }
+  const heading = notificationsHeading || notificationsPanel.querySelector("strong");
+  if (!heading) {
+    return;
+  }
+  notificationsPanel.querySelectorAll(".notification-item").forEach((item) => item.remove());
+  const items = state.demoGuide.length
+    ? ["Demo workspace ready.", ...state.demoGuide]
+    : [
+        "Live Copilot is ready when a meeting session starts.",
+        "Recorded meeting analysis will appear in Recent Meetings after upload."
+      ];
+  items.forEach((message) => {
+    const item = document.createElement("div");
+    item.className = "notification-item";
+    item.textContent = message;
+    notificationsPanel.appendChild(item);
+  });
 }
 
 async function loadMeetings() {
@@ -2705,7 +2789,7 @@ async function handleUpload(event) {
   setProcessingState(true, `Uploading ${file.name} and running ${profileLabel}...`);
   const formData = new FormData();
   formData.append("file", file);
-  const requestUrl = new URL("/api/v1/pipeline/run", window.location.origin);
+  const requestUrl = new URL(apiUrl("/api/v1/pipeline/run"));
   requestUrl.searchParams.set("analysis_profile", analysisProfile);
   if (startSeconds !== null) {
     requestUrl.searchParams.set("start_seconds", String(startSeconds));
@@ -3233,7 +3317,7 @@ async function apiFetch(url, options = {}) {
   if (state.authToken) {
     headers.set("Authorization", `Bearer ${state.authToken}`);
   }
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(apiUrl(url), { ...options, headers });
   if (response.status === 401) {
     clearSession();
     throw { status: 401 };

@@ -18,6 +18,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 
 try:
     from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
+    from fastapi.middleware.cors import CORSMiddleware
     from starlette.background import BackgroundTask
     from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
     import uvicorn
@@ -82,6 +83,7 @@ from boardsight_ai.storage import (
 )
 from boardsight_ai.reporting import write_structured_reports
 from boardsight_ai.models import pipeline_result_from_dict
+from boardsight_ai.demo_mode import create_demo_session, ensure_demo_workspace
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "output" / "appdata"
@@ -101,6 +103,36 @@ WARMUP_STATE: dict[str, object] = {
     "in_progress": False,
     "steps": [],
 }
+
+
+def _cors_origins() -> list[str]:
+    configured = [
+        origin.strip().rstrip("/")
+        for origin in os.getenv("BOARDSIGHT_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    defaults = [
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://boardsight.in",
+        "https://www.boardsight.in",
+        "https://boardsight-copilot.vercel.app",
+    ]
+    public_app_url = os.getenv("BOARDSIGHT_PUBLIC_APP_URL", "").strip().rstrip("/")
+    if public_app_url:
+        defaults.append(public_app_url)
+    return sorted({origin for origin in [*defaults, *configured] if origin})
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _env_bool(name: str, default: str = "false") -> bool:
@@ -531,6 +563,23 @@ async def login(request: Request, payload: dict | None = None) -> dict:
             raise HTTPException(status_code=403, detail="Email verification is required before signing in.")
         raise HTTPException(status_code=401, detail="Invalid username, email, or password.")
     return session
+
+
+@app.post("/api/v1/demo/session")
+def demo_session() -> dict:
+    try:
+        return create_demo_session(AUTH_DB_PATH, MEETING_DB_PATH)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unable to prepare the demo workspace right now.") from exc
+
+
+@app.post("/api/v1/demo/reset")
+def reset_demo_session() -> dict:
+    try:
+        manifest = ensure_demo_workspace(AUTH_DB_PATH, MEETING_DB_PATH, reset=True)
+        return {"status": "reset", "demo": manifest}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unable to reset the demo workspace right now.") from exc
 
 
 @app.post("/api/v1/auth/register")
