@@ -222,7 +222,7 @@ body:has(.landing-auth:not(.hidden)),
 
 .landing-hero {
   max-width: 1400px;
-  margin: 64px auto 64px;
+  margin: 78px auto 64px;
   display: grid;
   grid-template-columns: minmax(0, 1.04fr) minmax(420px, 560px);
   align-items: center;
