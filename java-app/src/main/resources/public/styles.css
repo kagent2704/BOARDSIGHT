@@ -165,7 +165,7 @@ body:has(.landing-auth:not(.hidden)),
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin: 0 auto 4px;
+  margin: 0 auto 18px;
   max-width: 1400px;
 }
 
@@ -222,7 +222,7 @@ body:has(.landing-auth:not(.hidden)),
 
 .landing-hero {
   max-width: 1400px;
-  margin: 34px auto 26px;
+  margin: 42px auto 42px;
   display: grid;
   grid-template-columns: minmax(0, 1.04fr) minmax(420px, 560px);
   align-items: center;
@@ -252,6 +252,10 @@ body:has(.landing-auth:not(.hidden)),
   color: transparent;
 }
 
+.headline-accent-nowrap {
+  white-space: nowrap;
+}
+
 .landing-lead {
   margin: 0;
   max-width: 31ch;
@@ -262,6 +266,7 @@ body:has(.landing-auth:not(.hidden)),
 
 .landing-cta-row {
   display: flex;
+  margin-bottom: 18px;
 }
 
 .landing-demo-btn {
@@ -381,7 +386,7 @@ body:has(.landing-auth:not(.hidden)),
 
 .landing-feature-bar {
   max-width: 1400px;
-  margin: 6px auto 0;
+  margin: 18px auto 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 1px solid rgba(123, 110, 255, 0.14);
