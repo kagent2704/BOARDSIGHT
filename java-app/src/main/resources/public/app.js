@@ -28,6 +28,10 @@ const loginView = document.getElementById("loginView");
 const appView = document.getElementById("appView");
 const loginForm = document.getElementById("loginForm");
 const themeToggle = document.getElementById("themeToggle");
+const landingThemeToggle = document.getElementById("landingThemeToggle");
+const authOpenBtn = document.getElementById("authOpenBtn");
+const authCloseBtn = document.getElementById("authCloseBtn");
+const authModalBackdrop = document.getElementById("authModalBackdrop");
 const refreshBtn = document.getElementById("refreshBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const uploadInput = document.getElementById("uploadInput");
@@ -53,6 +57,7 @@ const passwordInput = document.getElementById("password");
 const confirmPasswordInput = document.getElementById("confirmPassword");
 const roleInput = document.getElementById("role");
 const guestLogin = document.getElementById("guestLogin");
+const guestHeroBtn = document.getElementById("guestHeroBtn");
 const userName = document.getElementById("userName");
 const userRole = document.getElementById("userRole");
 const userInitials = document.getElementById("userInitials");
@@ -125,6 +130,22 @@ themeToggle.addEventListener("click", () => {
   localStorage.setItem("boardsight-theme", state.theme);
 });
 
+landingThemeToggle?.addEventListener("click", () => {
+  themeToggle.click();
+});
+
+authOpenBtn?.addEventListener("click", () => {
+  openAuthModal();
+});
+
+authCloseBtn?.addEventListener("click", () => {
+  closeAuthModal();
+});
+
+authModalBackdrop?.addEventListener("click", () => {
+  closeAuthModal();
+});
+
 authModeToggle.addEventListener("click", () => {
   state.authMode = state.authMode === "signin" ? "signup" : "signin";
   clearAuthFeedback();
@@ -147,6 +168,10 @@ guestLogin.addEventListener("click", async () => {
   usernameInput.value = "admin";
   passwordInput.value = "boardsight123";
   await submitLogin("admin", "boardsight123");
+});
+
+guestHeroBtn?.addEventListener("click", () => {
+  guestLogin.click();
 });
 
 loginForm.addEventListener("submit", async (event) => {
@@ -203,6 +228,17 @@ function clearAuthFeedback() {
   authStatus.classList.remove("success-text", "error-text");
 }
 
+function openAuthModal() {
+  state.authMode = "signin";
+  clearAuthFeedback();
+  syncAuthMode();
+  loginView.classList.add("auth-modal-open");
+}
+
+function closeAuthModal() {
+  loginView.classList.remove("auth-modal-open");
+}
+
 function setAuthFeedback(message, { success = false } = {}) {
   authStatus.textContent = message;
   authStatus.classList.toggle("success-text", Boolean(success));
@@ -228,7 +264,7 @@ function setAuthBusy(active, busyLabel = "Working...") {
   if (active) {
     authSubmit.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>${busyLabel}</span>`;
   } else {
-    guestLogin.textContent = "Continue as Demo";
+    guestLogin.textContent = guestLogin.dataset.defaultLabel || "Continue as Demo";
     syncAuthMode();
   }
 }
@@ -386,6 +422,7 @@ function syncFloatingLauncher() {
 
 async function bootstrapSession() {
   if (!state.authToken) {
+    closeAuthModal();
     loginView.classList.remove("hidden");
     appView.classList.add("hidden");
     return;
@@ -396,6 +433,7 @@ async function bootstrapSession() {
     const payload = await response.json();
     state.currentUser = normalizeUser(payload);
     updateUserChip();
+    closeAuthModal();
     loginView.classList.add("hidden");
     appView.classList.remove("hidden");
     if (isLiveCopilotPopup) {
@@ -504,6 +542,7 @@ async function submitLogin(username, password) {
   state.currentUser = normalizeUser(payload);
   updateUserChip();
   clearAuthFeedback();
+  closeAuthModal();
   loginView.classList.add("hidden");
   appView.classList.remove("hidden");
   if (isLiveCopilotPopup) {
@@ -536,6 +575,7 @@ function clearSession() {
   renderTrace();
   renderWorkflow();
   loginView.classList.remove("hidden");
+  closeAuthModal();
   appView.classList.add("hidden");
   syncFloatingLauncher();
 }

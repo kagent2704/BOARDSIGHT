@@ -20,7 +20,111 @@
     </aside>
 
     <main class="workspace">
-      <section id="loginView" class="auth-panel panel elevated">
+      <section id="loginView" class="auth-panel panel elevated landing-auth">
+        <header class="landing-nav">
+          <div class="landing-brand">
+            <div class="brand-mark small">B</div>
+            <strong>BoardSight</strong>
+          </div>
+          <nav class="landing-links" aria-label="BoardSight">
+            <a href="#product">Product</a>
+            <a href="#solutions">Solutions</a>
+            <a href="#security">Security</a>
+            <a href="#resources">Resources</a>
+          </nav>
+          <div class="landing-actions">
+            <button id="landingThemeToggle" class="landing-nav-btn landing-theme-btn" type="button">Theme</button>
+            <button id="authOpenBtn" class="landing-nav-btn" type="button">Sign In</button>
+          </div>
+        </header>
+
+        <div class="landing-hero">
+          <div class="landing-copy">
+            <span class="eyebrow">Governance Intelligence Workspace</span>
+            <h2 class="landing-headline">
+              <span>From boardroom</span>
+              <span>conversations to</span>
+              <span class="headline-accent">confident decisions.</span>
+            </h2>
+            <p class="landing-lead">BoardSight turns meetings into decision trails, accountable workflows, and actionable outcomes your team can trust.</p>
+            <div class="landing-cta-row">
+              <button id="guestHeroBtn" type="button" class="primary-btn landing-demo-btn">Explore Demo</button>
+            </div>
+          </div>
+
+          <div class="landing-orbital" aria-hidden="true">
+            <div class="orbital-ring orbital-ring-outer"></div>
+            <div class="orbital-ring orbital-ring-mid"></div>
+            <div class="orbital-ring orbital-ring-inner"></div>
+            <span class="orbital-star orbital-star-one"></span>
+            <span class="orbital-star orbital-star-two"></span>
+            <span class="orbital-star orbital-star-three"></span>
+            <span class="orbital-star orbital-star-four"></span>
+            <div class="orbital-core">
+              <span class="orbital-kicker">BoardSight</span>
+              <strong>Decisions<br>to Execution</strong>
+              <div class="orbital-divider"></div>
+              <small>Trace <span>|</span> Workflow <span>|</span> Reports</small>
+            </div>
+          </div>
+        </div>
+
+        <section class="landing-feature-bar">
+          <article class="landing-feature-card" id="security">
+            <div class="landing-feature-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3l7 3v5c0 4.6-2.7 8.8-7 10-4.3-1.2-7-5.4-7-10V6l7-3Z"></path>
+                <path d="m9.5 12.5 1.8 1.8 3.7-4.1"></path>
+              </svg>
+            </div>
+            <div>
+              <strong>Enterprise-Grade Security</strong>
+              <p>Built with security at the core. Your data stays private, encrypted, and compliant.</p>
+            </div>
+          </article>
+          <article class="landing-feature-card" id="product">
+            <div class="landing-feature-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"></path>
+              </svg>
+            </div>
+            <div>
+              <strong>AI-Powered Intelligence</strong>
+              <p>Extract decisions, risks, and actions automatically from any meeting.</p>
+            </div>
+          </article>
+          <article class="landing-feature-card" id="solutions">
+            <div class="landing-feature-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m12 4 8 4-8 4-8-4 8-4Z"></path>
+                <path d="m4 12 8 4 8-4"></path>
+                <path d="m4 16 8 4 8-4"></path>
+              </svg>
+            </div>
+            <div>
+              <strong>From Insight to Action</strong>
+              <p>Convert decisions into workflows and ensure accountability across teams.</p>
+            </div>
+          </article>
+          <article class="landing-feature-card" id="resources">
+            <div class="landing-feature-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 20V10"></path>
+                <path d="M10 20V6"></path>
+                <path d="M16 20v-4"></path>
+                <path d="M22 20V3"></path>
+                <path d="m3 13 5-5 4 3 7-7"></path>
+              </svg>
+            </div>
+            <div>
+              <strong>Designed for Impact</strong>
+              <p>Built for modern governance teams who drive clarity, speed, and results.</p>
+            </div>
+          </article>
+        </section>
+
+        <div class="landing-chevron" aria-hidden="true"></div>
+        <div id="authModalBackdrop" class="auth-modal-backdrop"></div>
         <div class="auth-shell">
           <div class="auth-story">
             <span class="eyebrow">Governance Intelligence Workspace</span>
@@ -68,7 +172,8 @@
               </article>
             </div>
           </div>
-          <div class="auth-card-wrap">
+          <div class="auth-card-wrap auth-modal">
+        <button id="authCloseBtn" class="auth-close-btn" type="button" aria-label="Close sign in">×</button>
         <div class="panel-header">
           <div>
             <span class="auth-card-kicker">Secure workspace access</span>
