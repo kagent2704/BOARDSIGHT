@@ -51,6 +51,11 @@ body[data-theme="light"] {
 }
 
 * { box-sizing: border-box; }
+html,
+body {
+  min-height: 100%;
+  overflow-x: hidden;
+}
 body {
   margin: 0;
   font-family: "Inter", "Segoe UI", "Helvetica Neue", sans-serif;
@@ -61,7 +66,13 @@ body {
   color: var(--text);
 }
 .hidden { display: none !important; }
-.app-shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; gap: 10px; }
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+  gap: 10px;
+  overflow-x: hidden;
+}
 .brand-panel {
   padding: 18px 20px 0;
   display: flex;
@@ -125,6 +136,15 @@ body {
 
 .landing-auth {
   padding: 24px 52px 30px;
+  background:
+    radial-gradient(circle at 74% 28%, rgba(99, 102, 241, 0.24), transparent 24%),
+    radial-gradient(circle at 62% 78%, rgba(99, 102, 241, 0.10), transparent 22%),
+    radial-gradient(circle at 18% 12%, rgba(79, 70, 229, 0.08), transparent 20%),
+    linear-gradient(180deg, #0a0c1f 0%, #040713 100%);
+}
+
+body:has(.landing-auth:not(.hidden)),
+.app-shell:has(.landing-auth:not(.hidden)) {
   background:
     radial-gradient(circle at 74% 28%, rgba(99, 102, 241, 0.24), transparent 24%),
     radial-gradient(circle at 62% 78%, rgba(99, 102, 241, 0.10), transparent 22%),
