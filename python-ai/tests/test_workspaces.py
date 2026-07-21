@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -19,10 +17,8 @@ from boardsight_ai.workspaces import (
     get_workspace_integration,
     get_workspace_for_user,
     init_workspace_storage,
-    list_due_subscription_reminders,
     list_workspace_integrations,
     release_minutes,
-    refresh_subscription_statuses,
     request_subscription_change,
     reserve_minutes,
     save_workspace_integration,
@@ -203,46 +199,6 @@ def test_subscription_change_request_is_idempotent(tmp_path) -> None:
     assert first["current_plan_code"] == "personal"
     assert first["requested_plan_code"] == "starter"
     assert first["status"] == "pending"
-
-
-def test_subscription_grace_period_and_renewal_reminders(tmp_path) -> None:
-    db_path = tmp_path / "renewals.db"
-    owner = _user(1, "owner@example.com")
-    workspace = ensure_personal_workspace(db_path, owner)
-    workspace_id = int(workspace["id"])
-    current_end = datetime(2026, 7, 25, 10, 0, tzinfo=UTC)
-    execute(
-        db_path,
-        """
-        UPDATE subscriptions
-        SET plan_code = 'starter', billing_cycle = 'annual', status = 'active',
-            current_period_start = :period_start, current_period_end = :period_end
-        WHERE organization_id = :organization_id
-        """,
-        {
-            "organization_id": workspace_id,
-            "period_start": "2026-07-01 00:00:00",
-            "period_end": current_end.strftime("%Y-%m-%d %H:%M:%S"),
-        },
-    )
-
-    reminders = list_due_subscription_reminders(db_path, now=datetime(2026, 7, 22, 9, 0, tzinfo=UTC))
-    summary = usage_summary(db_path, workspace_id)
-
-    assert reminders[0]["days_offset"] == 3
-    assert reminders[0]["billing_cycle"] == "annual"
-    assert summary["days_until_renewal"] == 4
-
-    refresh_subscription_statuses(db_path, now=current_end + timedelta(days=3))
-    past_due = get_workspace_for_user(db_path, workspace_id, 1)
-    assert past_due is not None
-    assert past_due["subscription_status"] == "past_due"
-    assert_workspace_access(past_due, require_license=True)
-
-    refresh_subscription_statuses(db_path, now=current_end + timedelta(days=8))
-    canceled = get_workspace_for_user(db_path, workspace_id, 1)
-    assert canceled is not None
-    assert canceled["subscription_status"] == "canceled"
 
 
 def test_workspace_api_creates_personal_and_team_workspaces(tmp_path, monkeypatch) -> None:

@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import threading
-from datetime import UTC, datetime
+from datetime import datetime
 from urllib.parse import unquote
 from pathlib import Path
 
@@ -56,15 +56,17 @@ from boardsight_ai.agent_storage import (
     update_agent_execution_run,
 )
 from boardsight_ai.config import _load_local_env, default_config
-from boardsight_ai.database import fetchall as db_fetchall
 from boardsight_ai.data_protection import data_encryption_enabled, data_encryption_key_fingerprint
-from boardsight_ai.emailer import send_billing_reminder_email, send_verification_email
+from boardsight_ai.emailer import send_verification_email
 from boardsight_ai.payments import (
     PaymentConfigurationError,
     PaymentGatewayError,
     create_checkout_order,
+    create_recurring_subscription,
     init_payment_storage,
+    process_subscription_webhook,
     verify_checkout_payment,
+    verify_subscription_checkout,
 )
 from boardsight_ai.gitlab_execution import build_gitlab_execution_plan, normalize_gitlab_plan_source, sync_plan_to_gitlab
 from boardsight_ai.gitlab_storage import init_gitlab_storage, protect_gitlab_storage, save_gitlab_sync
@@ -114,16 +116,12 @@ from boardsight_ai.workspaces import (
     list_workspace_integrations,
     list_workspace_members,
     list_workspaces_for_user,
-    mark_subscription_reminder_sent,
     plan_catalog,
-    PLAN_PRICING,
     release_minutes,
-    refresh_subscription_statuses,
     request_subscription_change,
     reserve_minutes,
     save_workspace_integration,
     set_subscription,
-    list_due_subscription_reminders,
     update_member,
     usage_summary,
 )
@@ -182,10 +180,6 @@ app.add_middleware(
 
 def _env_bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _maintenance_token() -> str:
-    return os.getenv("BOARDSIGHT_MAINTENANCE_TOKEN", "").strip()
 
 
 def _bootstrap_admin_from_env() -> None:
@@ -528,104 +522,11 @@ def _run_data_protection_maintenance() -> dict[str, object]:
     }
 
 
-def _billing_manage_url() -> str:
-    base_url = os.getenv("BOARDSIGHT_PUBLIC_APP_URL", "https://www.boardsight.in").strip().rstrip("/")
-    return f"{base_url}/?view=billing"
-
-
-def _workspace_billing_contacts(organization_id: int) -> list[dict[str, str]]:
-    members = db_fetchall(
-        MEETING_DB_PATH,
-        """
-        SELECT user_id, role
-        FROM organization_members
-        WHERE organization_id = :organization_id
-          AND role IN ('owner', 'admin')
-          AND license_status = 'active'
-        ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END, user_id
-        """,
-        {"organization_id": organization_id},
-    )
-    contacts: list[dict[str, str]] = []
-    seen_emails: set[str] = set()
-    for member in members:
-        identity = fetchone(
-            AUTH_DB_PATH,
-            "SELECT email, display_name FROM users WHERE id = :user_id AND email_verified = :email_verified",
-            {"user_id": member["user_id"], "email_verified": True},
-        )
-        if identity is None:
-            continue
-        email = str(identity.get("email") or "").strip().lower()
-        if not email or email in seen_emails:
-            continue
-        seen_emails.add(email)
-        contacts.append({"email": email, "display_name": str(identity.get("display_name") or "").strip()})
-    return contacts
-
-
-def _run_billing_maintenance() -> dict[str, object]:
-    updated_statuses = refresh_subscription_statuses(MEETING_DB_PATH)
-    reminders = list_due_subscription_reminders(MEETING_DB_PATH)
-    if not _email_provider_is_configured():
-        return {
-            "subscription_status_updates": updated_statuses,
-            "reminders_due": len(reminders),
-            "reminders_sent": 0,
-            "email_configured": False,
-        }
-
-    sent_count = 0
-    for reminder in reminders:
-        contacts = _workspace_billing_contacts(int(reminder["organization_id"]))
-        if not contacts:
-            continue
-        period_end = str(reminder.get("current_period_end") or "")
-        normalized_period_end = period_end.replace("T", " ").replace("Z", "+00:00")
-        parsed_period_end = datetime.fromisoformat(normalized_period_end)
-        if parsed_period_end.tzinfo is None:
-            parsed_period_end = parsed_period_end.replace(tzinfo=UTC)
-        renewal_date = parsed_period_end.astimezone(UTC).strftime("%d %b %Y")
-        plan_name = str(PLAN_PRICING.get(str(reminder["plan_code"]), {}).get("name") or str(reminder["plan_code"]).title())
-        delivered = False
-        for contact in contacts:
-            result = send_billing_reminder_email(
-                to_email=contact["email"],
-                display_name=contact["display_name"],
-                workspace_name=str(reminder["organization_name"]),
-                plan_name=plan_name,
-                billing_cycle=str(reminder.get("billing_cycle") or "monthly"),
-                renewal_date_label=renewal_date,
-                manage_url=_billing_manage_url(),
-                days_offset=int(reminder["days_offset"]),
-                grace_period_days=int(reminder["grace_period_days"]),
-            )
-            if bool(result.get("sent")):
-                delivered = True
-        if delivered:
-            mark_subscription_reminder_sent(
-                MEETING_DB_PATH,
-                organization_id=int(reminder["organization_id"]),
-                reminder_key=str(reminder["reminder_key"]),
-                reminder_type=str(reminder["reminder_type"]),
-                days_offset=int(reminder["days_offset"]),
-                current_period_end=period_end,
-            )
-            sent_count += 1
-    return {
-        "subscription_status_updates": updated_statuses,
-        "reminders_due": len(reminders),
-        "reminders_sent": sent_count,
-        "email_configured": True,
-    }
-
-
 _bootstrap_admin_from_env()
 _assign_orphaned_runs_to_bootstrap_admin()
 _migrate_legacy_admin_runs_to_bootstrap_admin()
 _run_data_protection_maintenance()
 _run_retention_maintenance()
-_run_billing_maintenance()
 
 
 def _warm_model_caches() -> None:
@@ -648,7 +549,6 @@ def _warm_model_caches() -> None:
 @app.on_event("startup")
 def warm_models_on_startup() -> None:
     _run_retention_maintenance()
-    _run_billing_maintenance()
     if not WARM_MODELS_ON_STARTUP:
         return
 
@@ -895,17 +795,6 @@ def _require_admin_user(request: Request) -> dict:
     return user
 
 
-def _require_maintenance_access(request: Request) -> None:
-    expected = _maintenance_token()
-    if not expected:
-        raise HTTPException(status_code=503, detail="Maintenance token is not configured.")
-    provided = request.headers.get("x-boardsight-maintenance-token", "").strip()
-    auth_header = request.headers.get("authorization", "")
-    bearer = auth_header.removeprefix("Bearer ").strip() if auth_header else ""
-    if provided != expected and bearer != expected:
-        raise HTTPException(status_code=401, detail="Invalid maintenance token.")
-
-
 def _workspace_context(
     request: Request,
     user: dict,
@@ -941,7 +830,6 @@ def _workspace_payload(workspace: dict) -> dict:
         "license_status": workspace.get("license_status"),
         "plan_code": workspace.get("plan_code"),
         "subscription_status": workspace.get("subscription_status"),
-        "billing_cycle": workspace.get("billing_cycle") or workspace.get("usage", {}).get("billing_cycle"),
         "billing_mode": workspace.get("billing_mode") or "customer",
         "is_sponsored": bool(workspace.get("user_sponsorship_id")) or str(workspace.get("billing_mode") or "") == "internal_sponsored",
         "sponsorship_type": workspace.get("user_sponsorship_type"),
@@ -1154,23 +1042,90 @@ async def verify_payment(request: Request, payload: dict | None = None) -> dict:
 
 @app.post("/api/v1/subscriptions/create")
 async def create_subscription(request: Request, payload: dict | None = None) -> dict:
-    raise HTTPException(
-        status_code=410,
-        detail="Recurring subscriptions are disabled. Use the one-time checkout flow for monthly or annual renewals.",
-    )
+    user = _require_session_user(request)
+    request_payload = await _collect_request_payload(request, payload)
+    try:
+        organization_id = int(request_payload.get("organization_id") or 0)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="A valid workspace is required.") from exc
+    workspace = get_workspace_for_user(MEETING_DB_PATH, organization_id, int(user["user_id"]))
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace was not found for this account.")
+    try:
+        assert_workspace_access(workspace, require_admin=True)
+        if workspace.get("is_sponsored") or workspace.get("user_sponsorship_id") or workspace.get("billing_mode") == "internal_sponsored":
+            raise PermissionError("Sponsored workspaces do not need to purchase a subscription.")
+        subscription = create_recurring_subscription(
+            MEETING_DB_PATH,
+            organization_id=organization_id,
+            user_id=int(user["user_id"]),
+            plan_code=str(request_payload.get("plan_code") or ""),
+            billing_cycle=str(request_payload.get("billing_cycle") or "monthly"),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PaymentConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except PaymentGatewayError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return subscription
 
 
 @app.post("/api/v1/subscriptions/verify")
 async def verify_subscription(request: Request, payload: dict | None = None) -> dict:
-    raise HTTPException(
-        status_code=410,
-        detail="Recurring subscriptions are disabled. Use the one-time checkout flow for monthly or annual renewals.",
-    )
+    user = _require_session_user(request)
+    request_payload = await _collect_request_payload(request, payload)
+    required_fields = ("organization_id", "razorpay_payment_id", "razorpay_subscription_id", "razorpay_signature")
+    if any(not request_payload.get(field) for field in required_fields):
+        raise HTTPException(status_code=400, detail="Missing required Razorpay subscription fields.")
+    try:
+        organization_id = int(request_payload["organization_id"])
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="A valid workspace is required.") from exc
+    workspace = get_workspace_for_user(MEETING_DB_PATH, organization_id, int(user["user_id"]))
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace was not found for this account.")
+    try:
+        assert_workspace_access(workspace, require_admin=True)
+        subscription = verify_subscription_checkout(
+            MEETING_DB_PATH,
+            organization_id=organization_id,
+            razorpay_subscription_id=str(request_payload["razorpay_subscription_id"]),
+            razorpay_payment_id=str(request_payload["razorpay_payment_id"]),
+            razorpay_signature=str(request_payload["razorpay_signature"]),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PaymentConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "status": "success",
+        "subscription_id": subscription.get("provider_subscription_id"),
+        "plan_code": subscription.get("plan_code"),
+        "billing_cycle": subscription.get("billing_cycle"),
+    }
 
 
 @app.post("/api/v1/webhooks/razorpay")
 async def razorpay_webhook(request: Request) -> dict:
-    return {"status": "ignored", "detail": "Recurring webhook processing is disabled for manual renewals."}
+    raw_body = await request.body()
+    signature = request.headers.get("X-Razorpay-Signature", "")
+    event_id = request.headers.get("X-Razorpay-Event-Id", "")
+    try:
+        return process_subscription_webhook(
+            MEETING_DB_PATH,
+            raw_body=raw_body,
+            signature=signature,
+            event_id=event_id,
+        )
+    except PaymentConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/v1/workspaces")
@@ -1389,16 +1344,6 @@ def run_retention_cleanup(request: Request) -> dict:
         "status": "completed",
         "cleanup": _run_retention_maintenance(),
         "protection": _run_data_protection_maintenance(),
-        "billing": _run_billing_maintenance(),
-    }
-
-
-@app.post("/api/v1/internal/billing/maintenance")
-def run_billing_maintenance(request: Request) -> dict:
-    _require_maintenance_access(request)
-    return {
-        "status": "completed",
-        "billing": _run_billing_maintenance(),
     }
 
 

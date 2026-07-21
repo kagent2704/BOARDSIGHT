@@ -120,7 +120,6 @@ def test_verified_signature_activates_the_paid_plan(payment_database):
     assert result["status"] == "verified"
     subscription = fetchone(payment_database, "SELECT * FROM subscriptions WHERE organization_id = 1")
     assert subscription["plan_code"] == "growth"
-    assert subscription["billing_cycle"] == "annual"
     assert subscription["provider"] == "razorpay"
 
 

@@ -1114,27 +1114,16 @@ function renderWorkspaceUsage(current) {
   const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const planName = prettifyRole(current.plan_code || "personal");
   const isSponsored = Boolean(current.is_sponsored || usage.is_sponsored);
-  const renewalDueAt = usage.renewal_due_at || "";
-  const renewalDateLabel = renewalDueAt ? formatDate(renewalDueAt) : "";
-  const daysUntilRenewal = usage.days_until_renewal == null ? null : Number(usage.days_until_renewal);
-  let billingBadgeLabel = `${planName} · ${prettifyRole(current.subscription_status || "active")}`;
-  if (!isSponsored && renewalDateLabel) {
-    if (daysUntilRenewal != null && daysUntilRenewal >= 0) {
-      billingBadgeLabel = `${billingBadgeLabel} · Renews ${renewalDateLabel}`;
-    } else if (usage.grace_days_remaining != null) {
-      billingBadgeLabel = `${billingBadgeLabel} · Grace ends in ${Number(usage.grace_days_remaining)} day${Number(usage.grace_days_remaining) === 1 ? "" : "s"}`;
-    }
-  }
   if (sidebarUsageValue) sidebarUsageValue.textContent = isSponsored ? `${formatCompactNumber(used)} min tracked` : `${formatCompactNumber(remaining)} / ${formatCompactNumber(limit)} left`;
   if (sidebarUsageBar) sidebarUsageBar.style.width = isSponsored ? "100%" : `${percent}%`;
   if (sidebarPlanBadge) sidebarPlanBadge.textContent = isSponsored ? "Sponsored" : planName;
-  if (billingCurrentPlanBadge) billingCurrentPlanBadge.textContent = isSponsored ? "Founder sponsored · Forever free" : billingBadgeLabel;
+  if (billingCurrentPlanBadge) billingCurrentPlanBadge.textContent = isSponsored ? "Founder sponsored · Forever free" : `${planName} · ${prettifyRole(current.subscription_status || "active")}`;
   if (billingRemainingMinutes) billingRemainingMinutes.textContent = isSponsored ? formatCompactNumber(used) : formatCompactNumber(remaining);
-  if (billingAllowanceLabel) billingAllowanceLabel.textContent = isSponsored ? "minutes tracked, never charged" : renewalDateLabel ? `renews ${renewalDateLabel}` : "minutes remaining";
+  if (billingAllowanceLabel) billingAllowanceLabel.textContent = isSponsored ? "minutes tracked, never charged" : "minutes remaining";
   if (billingUsagePercent) billingUsagePercent.textContent = isSponsored ? "No charge" : `${percent}% used`;
   if (billingUsageBar) billingUsageBar.style.width = isSponsored ? "100%" : `${percent}%`;
   if (billingUsedMinutes) billingUsedMinutes.textContent = `${formatCompactNumber(used)} minutes used`;
-  if (billingMinuteLimit) billingMinuteLimit.textContent = isSponsored ? "Permanent sponsored access" : `${formatCompactNumber(limit)} minute limit · Manual renewal reminders enabled`;
+  if (billingMinuteLimit) billingMinuteLimit.textContent = isSponsored ? "Permanent sponsored access" : `${formatCompactNumber(limit)} minute limit`;
   if (billingSeatUsage) billingSeatUsage.textContent = `${Number(usage.active_licenses || 0)} / ${Number(usage.licensed_member_limit || 0)}`;
   renderBillingView();
 }
@@ -1153,9 +1142,6 @@ function renderBillingView() {
   const currentPlan = String(current?.plan_code || "personal");
   const isSponsored = Boolean(current?.is_sponsored || current?.usage?.is_sponsored);
   const canManage = ["owner", "admin"].includes(String(current?.role || "").toLowerCase());
-  const currentUsage = current?.usage || {};
-  const daysUntilRenewal = currentUsage.days_until_renewal == null ? null : Number(currentUsage.days_until_renewal);
-  const currentStatus = String(current?.subscription_status || "active").toLowerCase();
   pricingPlanGrid.innerHTML = state.pricingPlans.map((plan) => {
     const isCurrent = plan.plan_code === currentPlan;
     const featured = plan.plan_code === "starter";
@@ -1163,15 +1149,14 @@ function renderBillingView() {
     const price = annual ? plan.annual_price_inr : plan.monthly_price_inr;
     const priceLabel = price == null ? "Let's talk" : `₹${Number(price).toLocaleString("en-IN")}`;
     const suffix = price == null ? "" : annual ? "/ year" : "/ month";
-    const canRenewCurrent = isCurrent && !isSponsored && (currentStatus === "past_due" || currentStatus === "canceled" || (daysUntilRenewal != null && daysUntilRenewal <= 7));
-    const actionLabel = isSponsored ? "Included with sponsored access" : plan.plan_code === "custom" ? "Contact BoardSight" : canRenewCurrent ? `Renew ${priceLabel}` : isCurrent ? "Current plan" : `Pay ${priceLabel}`;
+    const actionLabel = isSponsored ? "Included with sponsored access" : isCurrent ? "Current plan" : plan.plan_code === "custom" ? "Contact BoardSight" : `Pay ${priceLabel}`;
     const memberLabel = plan.plan_code === "custom" ? "Contracted licensed members" : `<strong>${Number(plan.licensed_members).toLocaleString("en-IN")}</strong> licensed ${Number(plan.licensed_members) === 1 ? "member" : "members"}`;
     const minuteLabel = plan.plan_code === "custom" ? "Contracted pooled usage" : `<strong>${Number(plan.monthly_minutes).toLocaleString("en-IN")}</strong> pooled minutes/month`;
     return `<article class="pricing-card${featured ? " featured" : ""}${isCurrent ? " current" : ""}">
       ${featured ? '<span class="popular-plan-label">Best for teams</span>' : ""}
       <div class="pricing-card-head"><div><span>${escapeHtml(plan.name)}</span><strong>${priceLabel}<small>${suffix}</small></strong></div>${isCurrent ? '<span class="current-dot">Current</span>' : ""}</div>
       <ul><li>${memberLabel}</li><li>${minuteLabel}</li><li><strong>${Number(plan.retention_days)}</strong>-day meeting retention</li><li>Free viewer members</li></ul>
-      <button type="button" class="${featured && !isCurrent && !isSponsored ? "primary-btn" : "ghost-btn"}" data-request-plan="${escapeHtml(plan.plan_code)}" ${isSponsored || (!canRenewCurrent && isCurrent) || !canManage ? "disabled" : ""}>${escapeHtml(actionLabel)}</button>
+      <button type="button" class="${featured && !isCurrent && !isSponsored ? "primary-btn" : "ghost-btn"}" data-request-plan="${escapeHtml(plan.plan_code)}" ${isSponsored || isCurrent || !canManage ? "disabled" : ""}>${escapeHtml(actionLabel)}</button>
     </article>`;
   }).join("");
 }
@@ -1192,8 +1177,8 @@ async function startPlanCheckout(planCode, button) {
     button.disabled = true;
     button.textContent = "Preparing checkout...";
   }
-  if (billingRequestStatus) billingRequestStatus.textContent = "Creating your secure Razorpay checkout...";
-  const response = await apiFetch("/api/v1/payments/create-order", {
+  if (billingRequestStatus) billingRequestStatus.textContent = "Creating your secure Razorpay subscription...";
+  const response = await apiFetch("/api/v1/subscriptions/create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ organization_id: current.id, plan_code: planCode, billing_cycle: state.billingCycle })
@@ -1214,7 +1199,7 @@ async function startPlanCheckout(planCode, button) {
     name: "BoardSight",
     description: `${plan?.name || "BoardSight plan"} · ${state.billingCycle}`,
     image: `${window.location.origin}/assets/boardsight-mark.png`,
-    order_id: payload.order_id,
+    subscription_id: payload.subscription_id,
     prefill: {
       name: state.currentUser?.displayName || "",
       email: state.currentUser?.email || ""
@@ -1233,7 +1218,7 @@ async function startPlanCheckout(planCode, button) {
     },
     handler: async (payment) => {
       if (billingRequestStatus) billingRequestStatus.textContent = "Verifying payment securely...";
-      const verifyResponse = await apiFetch("/api/v1/payments/verify", {
+      const verifyResponse = await apiFetch("/api/v1/subscriptions/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organization_id: current.id, ...payment })
@@ -1248,7 +1233,7 @@ async function startPlanCheckout(planCode, button) {
         return;
       }
       checkoutCompleted = true;
-      if (billingRequestStatus) billingRequestStatus.textContent = `${plan?.name || "Plan"} activated successfully. Renewal reminders are now enabled for this workspace.`;
+      if (billingRequestStatus) billingRequestStatus.textContent = `${plan?.name || "Plan"} activated successfully.`;
       await loadWorkspaces();
       await loadWorkspaceUsage();
     }

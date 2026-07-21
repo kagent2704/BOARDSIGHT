@@ -30,23 +30,6 @@ def _timestamp(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _parse_timestamp(value: Any) -> datetime | None:
-    text_value = str(value or "").strip()
-    if not text_value:
-        return None
-    normalized = text_value.replace("T", " ").replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        try:
-            parsed = datetime.strptime(text_value, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
 def _credentials() -> tuple[str, str]:
     key_id = os.getenv("RAZORPAY_KEY_ID", "").strip()
     key_secret = os.getenv("RAZORPAY_KEY_SECRET", "").strip()
@@ -637,21 +620,7 @@ def verify_checkout_payment(
         raise ValueError("Payment signature verification failed.")
 
     now = datetime.now(UTC)
-    current_subscription = fetchone(
-        database_path,
-        "SELECT plan_code, current_period_end, status FROM subscriptions WHERE organization_id = :organization_id",
-        {"organization_id": organization_id},
-    ) or {}
-    duration = timedelta(days=365 if order["billing_cycle"] == "annual" else 30)
-    current_period_end = _parse_timestamp(current_subscription.get("current_period_end"))
-    renewal_base = now
-    if (
-        str(current_subscription.get("plan_code") or "") == str(order["plan_code"])
-        and current_period_end is not None
-        and current_period_end > now
-    ):
-        renewal_base = current_period_end
-    period_end = renewal_base + duration
+    period_end = now + timedelta(days=365 if order["billing_cycle"] == "annual" else 30)
     engine = get_engine(database_path)
     try:
         with engine.begin() as connection:
@@ -675,8 +644,7 @@ def verify_checkout_payment(
                     """
                     UPDATE subscriptions
                     SET plan_code = :plan_code, status = 'active', provider = 'razorpay',
-                        provider_subscription_id = NULL, billing_cycle = :billing_cycle,
-                        billing_mode = 'customer', sponsorship_id = NULL,
+                        provider_subscription_id = NULL, billing_mode = 'customer', sponsorship_id = NULL,
                         current_period_start = :period_start, current_period_end = :period_end,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE organization_id = :organization_id
@@ -684,7 +652,6 @@ def verify_checkout_payment(
                 ),
                 {
                     "plan_code": order["plan_code"],
-                    "billing_cycle": order["billing_cycle"],
                     "period_start": _timestamp(now),
                     "period_end": _timestamp(period_end),
                     "organization_id": organization_id,

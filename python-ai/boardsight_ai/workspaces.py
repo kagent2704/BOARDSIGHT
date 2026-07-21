@@ -36,8 +36,6 @@ PERMANENT_SPONSORED_EMAILS = {
     "kashmirasanjaypatil@gmail.com",
     "patilkashmirasanjay@gmail.com",
 }
-SUBSCRIPTION_GRACE_DAYS = 7
-RENEWAL_REMINDER_DAY_OFFSETS = (7, 3, 1, 0, -3)
 
 
 def _utcnow() -> datetime:
@@ -51,23 +49,6 @@ def _timestamp(value: datetime) -> str:
 def _cycle_start() -> str:
     now = _utcnow()
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _parse_timestamp(value: Any) -> datetime | None:
-    text_value = str(value or "").strip()
-    if not text_value:
-        return None
-    normalized = text_value.replace("T", " ").replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        try:
-            parsed = datetime.strptime(text_value, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def _slugify(value: str) -> str:
@@ -166,7 +147,6 @@ def init_workspace_storage(database_path: Path) -> None:
             organization_id {user_id_type} NOT NULL UNIQUE,
             plan_code TEXT NOT NULL DEFAULT 'personal',
             status TEXT NOT NULL DEFAULT 'active',
-            billing_cycle TEXT NOT NULL DEFAULT 'monthly',
             licensed_member_limit INTEGER,
             monthly_minute_limit INTEGER,
             current_period_start {timestamp_type},
@@ -194,20 +174,6 @@ def init_workspace_storage(database_path: Path) -> None:
             status TEXT NOT NULL DEFAULT 'pending',
             created_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP,
             resolved_at {timestamp_type}
-        )
-        """,
-    )
-    execute(
-        database_path,
-        f"""
-        CREATE TABLE IF NOT EXISTS subscription_reminders (
-            id {id_type},
-            organization_id {user_id_type} NOT NULL,
-            reminder_key TEXT NOT NULL UNIQUE,
-            reminder_type TEXT NOT NULL,
-            days_offset INTEGER NOT NULL,
-            current_period_end {timestamp_type} NOT NULL,
-            sent_at {timestamp_type} DEFAULT CURRENT_TIMESTAMP
         )
         """,
     )
@@ -253,11 +219,8 @@ def init_workspace_storage(database_path: Path) -> None:
     execute(database_path, "CREATE INDEX IF NOT EXISTS idx_usage_org_created ON usage_events(organization_id, created_at)")
     execute(database_path, "CREATE INDEX IF NOT EXISTS idx_subscription_requests_org ON subscription_change_requests(organization_id, created_at)")
     execute(database_path, "CREATE INDEX IF NOT EXISTS idx_billing_sponsorships_user ON billing_sponsorships(user_id)")
-    execute(database_path, "CREATE INDEX IF NOT EXISTS idx_subscription_reminders_org ON subscription_reminders(organization_id, sent_at)")
 
     subscription_columns = table_columns(database_path, "subscriptions")
-    if "billing_cycle" not in subscription_columns:
-        execute(database_path, "ALTER TABLE subscriptions ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly'")
     if "billing_mode" not in subscription_columns:
         execute(database_path, "ALTER TABLE subscriptions ADD COLUMN billing_mode TEXT NOT NULL DEFAULT 'customer'")
     if "sponsorship_id" not in subscription_columns:
@@ -408,8 +371,8 @@ def ensure_personal_workspace(database_path: Path, user: dict[str, Any]) -> dict
     execute(
         database_path,
         """
-        INSERT INTO subscriptions (organization_id, plan_code, status, billing_cycle, current_period_start)
-        VALUES (:organization_id, 'personal', 'active', 'monthly', :period_start)
+        INSERT INTO subscriptions (organization_id, plan_code, status, current_period_start)
+        VALUES (:organization_id, 'personal', 'active', :period_start)
         """,
         {"organization_id": organization_id, "period_start": _cycle_start()},
     )
@@ -437,7 +400,7 @@ def list_workspaces_for_user(database_path: Path, user_id: int) -> list[dict[str
         database_path,
         """
         SELECT o.*, m.role AS membership_role, m.license_status,
-               s.plan_code, s.status AS subscription_status, s.billing_cycle, s.billing_mode, s.sponsorship_id,
+               s.plan_code, s.status AS subscription_status, s.billing_mode, s.sponsorship_id,
                bs.id AS user_sponsorship_id, bs.sponsorship_type AS user_sponsorship_type
         FROM organization_members m
         JOIN organizations o ON o.id = m.organization_id
@@ -456,8 +419,8 @@ def get_workspace_for_user(database_path: Path, organization_id: int, user_id: i
         database_path,
         """
         SELECT o.*, m.role AS membership_role, m.license_status,
-               s.plan_code, s.status AS subscription_status, s.billing_cycle,
-               s.billing_mode, s.sponsorship_id, s.current_period_start, s.current_period_end,
+               s.plan_code, s.status AS subscription_status,
+               s.billing_mode, s.sponsorship_id,
                bs.id AS user_sponsorship_id, bs.sponsorship_type AS user_sponsorship_type,
                COALESCE(s.licensed_member_limit, p.licensed_members) AS licensed_member_limit,
                COALESCE(s.monthly_minute_limit, p.monthly_minutes) AS monthly_minute_limit,
@@ -484,7 +447,7 @@ def create_workspace(database_path: Path, name: str, owner_user_id: int) -> dict
         {"name": resolved_name, "slug": _unique_slug(database_path, resolved_name), "user_id": owner_user_id, "is_personal": False},
     )
     execute(database_path, "INSERT INTO organization_members (organization_id, user_id, role, license_status) VALUES (:organization_id, :user_id, 'owner', 'active')", {"organization_id": organization_id, "user_id": owner_user_id})
-    execute(database_path, "INSERT INTO subscriptions (organization_id, plan_code, status, billing_cycle, current_period_start) VALUES (:organization_id, 'starter', 'trialing', 'monthly', :period_start)", {"organization_id": organization_id, "period_start": _cycle_start()})
+    execute(database_path, "INSERT INTO subscriptions (organization_id, plan_code, status, current_period_start) VALUES (:organization_id, 'starter', 'trialing', :period_start)", {"organization_id": organization_id, "period_start": _cycle_start()})
     sponsorship = fetchone(database_path, "SELECT id FROM billing_sponsorships WHERE user_id = :user_id AND status = 'active'", {"user_id": owner_user_id})
     if sponsorship is not None:
         execute(
@@ -573,7 +536,7 @@ def assert_workspace_access(workspace: dict[str, Any], *, require_admin: bool = 
     if require_license and (role not in LICENSED_ROLES or str(workspace.get("license_status") or "").lower() != "active"):
         raise PermissionError("An active workspace license is required.")
     is_sponsored = bool(workspace.get("user_sponsorship_id")) or str(workspace.get("billing_mode") or "").lower() == "internal_sponsored"
-    if require_license and not is_sponsored and str(workspace.get("subscription_status") or "").lower() not in {"active", "trialing", "past_due"}:
+    if require_license and not is_sponsored and str(workspace.get("subscription_status") or "").lower() not in {"active", "trialing"}:
         raise PermissionError("The workspace subscription is not active.")
 
 
@@ -651,164 +614,28 @@ def delete_workspace_integration(database_path: Path, organization_id: int, prov
 
 
 def usage_summary(database_path: Path, organization_id: int) -> dict[str, Any]:
-    refresh_subscription_statuses(database_path)
     workspace_subscription = fetchone(
         database_path,
         """
-        SELECT s.plan_code, s.status, s.billing_cycle, s.billing_mode, s.sponsorship_id,
-               s.current_period_start, s.current_period_end,
+        SELECT s.plan_code, s.status, s.billing_mode, s.sponsorship_id,
                COALESCE(s.monthly_minute_limit, p.monthly_minutes) AS monthly_minute_limit,
                COALESCE(s.licensed_member_limit, p.licensed_members) AS licensed_member_limit
         FROM subscriptions s JOIN plan_entitlements p ON p.plan_code = s.plan_code
         WHERE s.organization_id = :organization_id
         """,
         {"organization_id": organization_id},
-    ) or {
-        "plan_code": "personal",
-        "status": "inactive",
-        "billing_cycle": "monthly",
-        "billing_mode": "customer",
-        "sponsorship_id": None,
-        "current_period_start": None,
-        "current_period_end": None,
-        "monthly_minute_limit": 0,
-        "licensed_member_limit": 0,
-    }
+    ) or {"plan_code": "personal", "status": "inactive", "billing_mode": "customer", "sponsorship_id": None, "monthly_minute_limit": 0, "licensed_member_limit": 0}
     usage = fetchone(database_path, "SELECT COALESCE(SUM(CASE WHEN status = 'committed' THEN quantity_minutes ELSE reserved_minutes END), 0) AS used_minutes FROM usage_events WHERE organization_id = :organization_id AND status IN ('reserved','committed') AND created_at >= :cycle_start", {"organization_id": organization_id, "cycle_start": _cycle_start()}) or {"used_minutes": 0}
     licenses = fetchone(database_path, "SELECT COUNT(*) AS count FROM organization_members WHERE organization_id = :organization_id AND license_status = 'active' AND role IN ('owner','admin','member')", {"organization_id": organization_id}) or {"count": 0}
     limit = float(workspace_subscription.get("monthly_minute_limit") or 0)
     used = float(usage.get("used_minutes") or 0)
-    period_end = _parse_timestamp(workspace_subscription.get("current_period_end"))
-    days_until_renewal = (period_end.date() - _utcnow().date()).days if period_end is not None else None
-    grace_days_remaining = None
-    if period_end is not None and days_until_renewal < 0:
-        grace_days_remaining = max(0, SUBSCRIPTION_GRACE_DAYS - abs(days_until_renewal))
     return {
         **workspace_subscription,
         "is_sponsored": str(workspace_subscription.get("billing_mode") or "") == "internal_sponsored",
         "used_minutes": round(used, 2),
         "remaining_minutes": round(max(0.0, limit - used), 2),
         "active_licenses": int(licenses.get("count") or 0),
-        "renewal_due_at": workspace_subscription.get("current_period_end"),
-        "days_until_renewal": days_until_renewal,
-        "grace_days_remaining": grace_days_remaining,
-        "grace_period_days": SUBSCRIPTION_GRACE_DAYS,
     }
-
-
-def refresh_subscription_statuses(database_path: Path, *, now: datetime | None = None) -> int:
-    init_workspace_storage(database_path)
-    current_time = now or _utcnow()
-    subscriptions = fetchall(
-        database_path,
-        """
-        SELECT id, status, billing_mode, current_period_end
-        FROM subscriptions
-        WHERE billing_mode <> 'internal_sponsored'
-        """,
-    )
-    updated_rows = 0
-    for subscription in subscriptions:
-        period_end = _parse_timestamp(subscription.get("current_period_end"))
-        if period_end is None:
-            continue
-        current_status = str(subscription.get("status") or "inactive").lower()
-        if current_time <= period_end:
-            target_status = "trialing" if current_status == "trialing" else "active"
-        elif current_time <= period_end + timedelta(days=SUBSCRIPTION_GRACE_DAYS):
-            target_status = "past_due"
-        else:
-            target_status = "canceled"
-        if target_status != current_status:
-            execute(
-                database_path,
-                "UPDATE subscriptions SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :id",
-                {"status": target_status, "id": subscription["id"]},
-            )
-            updated_rows += 1
-    return updated_rows
-
-
-def list_due_subscription_reminders(database_path: Path, *, now: datetime | None = None) -> list[dict[str, Any]]:
-    init_workspace_storage(database_path)
-    current_time = now or _utcnow()
-    refresh_subscription_statuses(database_path, now=current_time)
-    candidates = fetchall(
-        database_path,
-        """
-        SELECT s.organization_id, s.plan_code, s.billing_cycle, s.status, s.current_period_end, o.name AS organization_name
-        FROM subscriptions s
-        JOIN organizations o ON o.id = s.organization_id
-        WHERE s.billing_mode = 'customer'
-          AND s.current_period_end IS NOT NULL
-          AND s.status IN ('active', 'trialing', 'past_due')
-          AND o.status = 'active'
-        """,
-    )
-    reminders: list[dict[str, Any]] = []
-    current_date = current_time.date()
-    for candidate in candidates:
-        period_end = _parse_timestamp(candidate.get("current_period_end"))
-        if period_end is None:
-            continue
-        days_offset = (period_end.date() - current_date).days
-        if days_offset not in RENEWAL_REMINDER_DAY_OFFSETS:
-            continue
-        reminder_type = "expiry" if days_offset >= 0 else "grace"
-        reminder_key = f"{candidate['organization_id']}:{period_end.date().isoformat()}:{days_offset}"
-        already_sent = fetchone(
-            database_path,
-            "SELECT id FROM subscription_reminders WHERE reminder_key = :reminder_key",
-            {"reminder_key": reminder_key},
-        )
-        if already_sent is not None:
-            continue
-        reminders.append(
-            {
-                **candidate,
-                "reminder_key": reminder_key,
-                "reminder_type": reminder_type,
-                "days_offset": days_offset,
-                "grace_period_days": SUBSCRIPTION_GRACE_DAYS,
-            }
-        )
-    return reminders
-
-
-def mark_subscription_reminder_sent(
-    database_path: Path,
-    *,
-    organization_id: int,
-    reminder_key: str,
-    reminder_type: str,
-    days_offset: int,
-    current_period_end: str,
-) -> None:
-    init_workspace_storage(database_path)
-    existing = fetchone(
-        database_path,
-        "SELECT id FROM subscription_reminders WHERE reminder_key = :reminder_key",
-        {"reminder_key": reminder_key},
-    )
-    if existing is not None:
-        return
-    execute(
-        database_path,
-        """
-        INSERT INTO subscription_reminders (
-            organization_id, reminder_key, reminder_type, days_offset, current_period_end
-        ) VALUES (
-            :organization_id, :reminder_key, :reminder_type, :days_offset, :current_period_end
-        )
-        """,
-        {
-            "organization_id": organization_id,
-            "reminder_key": reminder_key,
-            "reminder_type": reminder_type,
-            "days_offset": days_offset,
-            "current_period_end": current_period_end,
-        },
-    )
 
 
 def reserve_minutes(database_path: Path, organization_id: int, user_id: int, minutes: float, *, usage_type: str, event_key: str | None = None, metadata_json: str = "{}") -> dict[str, Any]:
