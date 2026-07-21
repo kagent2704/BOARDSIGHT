@@ -150,9 +150,3 @@ One-command local smoke check:
 cd "C:\Users\kashm\OneDrive\Desktop\BOARDSIGHT_CV"
 .\scripts\smoke-test-local.ps1
 ```
-
-## Product Notes
-
-- This repo is oriented around one stable production pipeline instead of a research-style pile of optional vision models.
-- Gemini improves structured answers and summaries, but the product still returns usable outputs without it.
-- The old heavy analysis modules have been removed from the production code path and dependency bundle.
