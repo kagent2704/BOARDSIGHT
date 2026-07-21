@@ -1,6 +1,6 @@
 # BoardSight
 
-BoardSight is a meeting-intelligence product for recorded and live meetings. Recorded uploads run the current production pipeline: speech transcription, sparse sampled-frame visual analysis, person detection, workflow and decision extraction, exportable reports, and optional Gemini-backed reasoning.
+BoardSight is a meeting-intelligence product for recorded and live meetings. Recorded uploads now run the lightweight BoardSight production pipeline: fast speech transcription, sparse sampled-frame visual analysis, person detection, structured workflow and decision extraction, exportable reports, and optional Gemini-backed reasoning.
 
 This repository now ships one stable production path instead of multiple competing local analysis stacks.
 
@@ -8,7 +8,7 @@ It also includes a live-meeting workspace: start a session, stream speech or pas
 
 ## Organizations, Licensing, and Usage
 
-BoardSight treats an organization workspace as the commercial boundary. Existing accounts are migrated lazily into a personal workspace without losing their meetings. New team workspaces start on the Starter trial and support four workspace-only roles:
+BoardSight now treats an organization workspace as the commercial boundary. Existing accounts are migrated lazily into a personal workspace without losing their meetings. New team workspaces start on the Starter trial and support four workspace-only roles:
 
 - `owner`: billing, licenses, invitations, and workspace settings
 - `admin`: member and integration management
@@ -17,39 +17,21 @@ BoardSight treats an organization workspace as the commercial boundary. Existing
 
 Workspace roles are deliberately separate from the application-level administrator role. Recorded meetings, live sessions, usage reservations, and GitLab sync records are organization-scoped. Processing reserves pooled minutes before work begins, then commits actual usage or releases the reservation after a failure.
 
-Built-in entitlements match the current INR packaging:
+Built-in entitlements match the initial INR packaging:
 
 | Plan | Licensed members | Pooled minutes/month | Intended price |
 | --- | ---: | ---: | ---: |
-| Personal | 1 | 300 | Rs 199/month |
-| Starter Workspace | 3 | 1,200 | Rs 499/month |
-| Growth Workspace | 10 | 4,000 | Rs 999/month |
+| Personal | 1 | 300 | ₹199/month |
+| Starter | 3 | 1,200 | ₹499/month |
+| Growth | 10 | 4,000 | ₹999/month |
 
-Customers can purchase monthly or annual plans through one-time Razorpay Checkout. BoardSight activates or extends the workspace subscription after server-side payment verification, tracks `current_period_end`, allows a grace period for paid features, and sends automated renewal reminders through the billing-maintenance job.
-
-Founder and internal operator accounts can be permanently sponsored without disabling usage telemetry. Sponsored accounts still record usage for operational visibility, but they are never charged.
-
-Workspace invitation emails are still not sent automatically. Owners and admins currently receive a shareable seven-day invitation link in the UI for manual onboarding.
+Initial customers can be activated manually through `PUT /api/v1/admin/workspaces/{organization_id}/subscription` by a global BoardSight administrator. Payment-provider webhooks and transactional invitation email are intentionally not enabled yet; workspace owners currently receive a shareable seven-day invitation link in the UI.
 
 The browser sends `X-BoardSight-Workspace-ID` for workspace-scoped requests. If omitted, the service selects the user's personal or first available workspace.
 
-## Payments and Renewal Flow
-
-BoardSight currently uses a manual-renewal billing model:
-
-- `POST /api/v1/payments/create-order` creates a Razorpay order for a monthly or annual plan
-- `POST /api/v1/payments/verify` verifies the payment signature and activates or extends the workspace subscription
-- `POST /api/v1/internal/billing/maintenance` refreshes subscription status and sends renewal reminders
-
-Recurring autopay is intentionally disabled for now. The legacy recurring-subscription endpoints remain in place only to return a clear `410` response for older clients.
-
-Production renewal reminders are expected to run from a daily scheduler. The current deployment uses Razorpay Standard Checkout for one-time payments, Resend for reminder and verification email, and Secret Manager plus Cloud Scheduler for operational automation.
-
-In practice, this means customers can pay inside the product for a fresh month or year, but follow-up renewals are handled through reminder emails and billing UI prompts rather than background card debits.
-
 ## Production Pipeline
 
-BoardSight runs a single production pipeline for recorded meetings:
+BoardSight now runs a single production pipeline for recorded meetings:
 
 1. Extract audio and generate a timestamped transcript
 2. Derive speaker participation and dominance from transcript timing
@@ -77,7 +59,7 @@ Optional Gemini use:
 
 - `java-app/`: Java shell and browser UI
 - `python-ai/`: AI service, pipeline, storage, reporting, CLI
-- `scripts/`: local build, run, and deployment scripts
+- `scripts/`: local build and run scripts
 - `output/`: analyzed meetings, report artifacts, app databases
 - `docs/`: supporting notes and older alignment docs
 - `legacy/`: older prototype assets
@@ -124,29 +106,6 @@ $env:GEMINI_API_KEY="your-key"
 $env:BOARDSIGHT_ENABLE_DIARIZATION="false"
 $env:BOARDSIGHT_FASTER_WHISPER_MODEL="tiny.en"
 ```
-
-Payment, email, and billing-maintenance settings are server-side only. For production, configure at least:
-
-```powershell
-$env:RAZORPAY_KEY_ID="rzp_test_or_live_key"
-$env:RAZORPAY_KEY_SECRET="server-only-secret"
-$env:BOARDSIGHT_RESEND_API_KEY="resend-key"
-$env:BOARDSIGHT_EMAIL_FROM="BoardSight <noreply@mail.boardsight.in>"
-$env:BOARDSIGHT_EMAIL_REPLY_TO="support@boardsight.in"
-$env:BOARDSIGHT_PUBLIC_APP_URL="https://boardsight.in"
-$env:BOARDSIGHT_MAINTENANCE_TOKEN="internal-scheduler-token"
-```
-
-Administrative access is provisioned from environment variables:
-
-```powershell
-$env:BOARDSIGHT_BOOTSTRAP_ADMIN_USERNAME="admin-username"
-$env:BOARDSIGHT_BOOTSTRAP_ADMIN_PASSWORD="strong-password"
-$env:BOARDSIGHT_BOOTSTRAP_ADMIN_EMAIL="admin@boardsight.in"
-$env:BOARDSIGHT_BOOTSTRAP_ADMIN_DISPLAY_NAME="BoardSight Admin"
-```
-
-If you are deploying the commercial flow, set the bootstrap admin and server-side billing variables before inviting operators or running billing automation.
 
 ## Run Locally
 
@@ -232,16 +191,10 @@ cd "C:\Users\kashm\OneDrive\Desktop\BOARDSIGHT_CV"
 docker compose up --build
 ```
 
-## Bootstrap Admin
+## Default Login
 
-There is no guaranteed shared production login. Administrative access is provisioned from environment variables:
-
-- `BOARDSIGHT_BOOTSTRAP_ADMIN_USERNAME`
-- `BOARDSIGHT_BOOTSTRAP_ADMIN_PASSWORD`
-- `BOARDSIGHT_BOOTSTRAP_ADMIN_EMAIL`
-- `BOARDSIGHT_BOOTSTRAP_ADMIN_DISPLAY_NAME`
-
-The old `admin / boardsight123` pairing is only relevant to tests and older local setups.
+- Username: `admin`
+- Password: `boardsight123`
 
 ## Output Contract
 
@@ -286,17 +239,8 @@ cd "C:\Users\kashm\OneDrive\Desktop\BOARDSIGHT_CV"
 .\scripts\smoke-test-local.ps1
 ```
 
-Focused payment and workspace billing checks:
-
-```powershell
-cd "C:\Users\kashm\OneDrive\Desktop\BOARDSIGHT_CV"
-pytest .\python-ai\tests\test_payments.py -q
-pytest .\python-ai\tests\test_workspaces.py -q
-```
-
 ## Product Notes
 
 - This repo is oriented around one stable production pipeline instead of a research-style pile of optional vision models.
 - Gemini improves structured answers and summaries, but the product still returns usable outputs without it.
 - The old heavy analysis modules have been removed from the production code path and dependency bundle.
-- The current commercial flow is ready for controlled customer rollout with manual renewals, automated reminder emails, and operator-managed support rather than autopay mandates.
